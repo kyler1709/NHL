@@ -46,6 +46,9 @@ EASTERN_TZ = ZoneInfo("America/New_York")
 
 app = Flask(__name__, static_folder=HERE)
 
+# Import main_final for access to classes and constants
+import main_final
+
 # ── subprocess state ──────────────────────────────────────────────────────────
 _proc: subprocess.Popen | None = None
 _proc_lock = threading.Lock()
@@ -293,21 +296,55 @@ def api_test_bulb():
 @app.route("/api/team-colors")
 def api_team_colors():
     """Expose TEAM_COLORS as HSV tuples for the frontend swatches."""
-    # Import from main_final so there's a single source of truth
-    import importlib.util, pathlib
-    spec = importlib.util.spec_from_file_location("main_final", MAIN_SCRIPT)
-    mod  = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(mod)
-        out = {}
-        for abbrev, palette in mod.TEAM_COLORS.items():
-            out[abbrev] = {
-                "primary":   list(palette.primary),
-                "secondary": list(palette.secondary),
-            }
-        return jsonify(out)
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    out = {}
+    for abbrev, palette in main_final.TEAM_COLORS.items():
+        out[abbrev] = {
+            "primary":   list(palette.primary),
+            "secondary": list(palette.secondary),
+        }
+    return jsonify(out)
+
+
+@app.route("/api/simulate-goal")
+def api_simulate_goal():
+    """Simulate a goal for testing: flash the bulb with the team's colors."""
+    ip = request.args.get("ip", "").strip()
+    team = request.args.get("team", "").strip().upper()
+    if not ip:
+        return jsonify({"ok": False, "error": "No IP provided"})
+    if not team:
+        return jsonify({"ok": False, "error": "No team provided"})
+
+    if team not in main_final.TEAM_COLORS:
+        return jsonify({"ok": False, "error": f"Unknown team: {team}"})
+    
+    # Create minimal config
+    config = main_final.AppConfig(
+        bulb_ip=ip,
+        request_timeout=10.0,
+        max_retries=4,
+        backoff_base=1.0,
+        backoff_max=30.0,
+        flash_duration=12.0,
+        flash_interval=0.45,
+        flash_quiet_window=1.5,
+        pregame_buffer_seconds=300,
+        poll_live_seconds=1.0,
+        poll_critical_seconds=0.75,
+        poll_pregame_seconds=10.0,
+        poll_error_seconds=5.0,
+        restore_transition_ms=150,
+        flash_transition_ms=120,
+    )
+
+    async def _simulate():
+        bulb = main_final.BulbController(config)
+        snapshot = await bulb.capture_state()
+        await bulb.flash_team(team, snapshot)
+        await bulb.shutdown()
+
+    asyncio.run(_simulate())
+    return jsonify({"ok": True, "error": None})
 
 
 # ── entry point ───────────────────────────────────────────────────────────────

@@ -405,6 +405,18 @@ header {
       <div class="field"><label>Restore transition (ms)</label><input type="number" id="restore_transition_ms" value="150" min="0" step="10" /></div>
     </div>
 
+    <div class="sidebar-section">
+      <div class="section-label">Testing</div>
+      <div class="field">
+        <label>Team</label>
+        <select id="test-team">
+          <option value="">Select team...</option>
+        </select>
+      </div>
+      <button class="btn" id="simulate-goal-btn" style="width:100%;justify-content:center">Simulate Goal</button>
+      <div class="test-result" id="simulate-result"></div>
+    </div>
+
   </aside>
 
   <!-- ── Main ────────────────────────────────────────────────────────────── -->
@@ -464,6 +476,8 @@ const startBtn     = $("start-btn");
 const stopBtn      = $("stop-btn");
 const testBtn      = $("test-btn");
 const testResult   = $("test-result");
+const simulateGoalBtn = $("simulate-goal-btn");
+const simulateResult  = $("simulate-result");
 const themeBtn     = $("theme-btn");
 const logWrap      = $("log-wrap");
 const autoscroll   = $("autoscroll");
@@ -524,6 +538,15 @@ async function loadTeamColors() {
   try {
     const r = await fetch("/api/team-colors");
     if (r.ok) _teamColors = await r.json();
+    // Populate test team select
+    const select = $("test-team");
+    select.innerHTML = '<option value="">Select team...</option>';
+    Object.keys(_teamColors).sort().forEach(abbrev => {
+      const opt = document.createElement("option");
+      opt.value = abbrev;
+      opt.textContent = abbrev;
+      select.appendChild(opt);
+    });
   } catch (_) {}
 }
 
@@ -633,6 +656,33 @@ testBtn.addEventListener("click", async () => {
     testResult.textContent = `✗ ${e.message}`;
   } finally {
     testBtn.disabled = false;
+  }
+});
+
+// ── Simulate goal ─────────────────────────────────────────────────────────────
+simulateGoalBtn.addEventListener("click", async () => {
+  const ip = $("bulb-ip").value.trim();
+  const team = $("test-team").value.trim();
+  if (!ip) { simulateResult.className = "test-result err"; simulateResult.textContent = "✗ Enter an IP first"; return; }
+  if (!team) { simulateResult.className = "test-result err"; simulateResult.textContent = "✗ Select a team first"; return; }
+  simulateGoalBtn.disabled = true;
+  simulateResult.className = "test-result";
+  simulateResult.textContent = "Simulating…";
+  try {
+    const r = await fetch(`/api/simulate-goal?ip=${encodeURIComponent(ip)}&team=${encodeURIComponent(team)}`);
+    const d = await r.json();
+    if (d.ok) {
+      simulateResult.className = "test-result ok";
+      simulateResult.textContent = `✓ Simulated goal for ${team}`;
+    } else {
+      simulateResult.className = "test-result err";
+      simulateResult.textContent = `✗ ${d.error || "Failed"}`;
+    }
+  } catch (e) {
+    simulateResult.className = "test-result err";
+    simulateResult.textContent = `✗ ${e.message}`;
+  } finally {
+    simulateGoalBtn.disabled = false;
   }
 });
 
