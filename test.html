@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NHL Goal Light - Test</title>
+<link rel="preconnect" href="https://api.fontshare.com" />
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet" />
+<style>
+/* ── Reset & tokens ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #171614;
+  --surface:   #1c1b19;
+  --surface2:  #242320;
+  --border:    #2e2d2a;
+  --text:      #e8e6e0;
+  --muted:     #7a7870;
+  --accent:    #cc0000;
+  --accent-dim:#8b0000;
+  --red:       #d44c4c;
+  --green:     #4caf50;
+  --yellow:    #c9a227;
+  --radius:    5px;
+}
+
+[data-theme="light"] {
+  --bg:       #f4f3f0;
+  --surface:  #ffffff;
+  --surface2: #ebebea;
+  --border:   #d0cfc9;
+  --text:     #1a1916;
+  --muted:    #7a7870;
+}
+
+html, body {
+  height: 100%;
+  font-family: 'Satoshi', system-ui, sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.app {
+  display: grid;
+  grid-template-rows: 44px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.logo {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+.logo span { color: var(--accent); }
+
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.theme-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  width: 28px; height: 28px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color .15s, color .15s;
+}
+.theme-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Main content ───────────────────────────────────────────────────────── */
+.main {
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  max-width: 400px;
+  width: 100%;
+}
+
+.panel h2 {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.field { margin-bottom: 12px; }
+
+.field label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.field input[type="text"],
+.field input[type="number"],
+.field select {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+  transition: border-color .15s;
+}
+.field input:focus, .field select:focus { border-color: var(--accent); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s, opacity .15s;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn:disabled { opacity: .38; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: #fff;
+}
+
+.test-result {
+  margin-top: 10px;
+  font-size: 12px;
+  min-height: 18px;
+}
+.test-result.ok  { color: var(--green); }
+.test-result.err { color: var(--red); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <header>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#cc0000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M12 8v4l3 3"/>
+    </svg>
+    <span class="logo">NHL <span>Goal Light</span></span>
+    <div class="header-right">
+      <a href="/" class="btn" style="padding: 4px 8px; font-size: 11px;">Back</a>
+      <button class="theme-btn" id="theme-btn" title="Toggle theme">🌙</button>
+    </div>
+  </header>
+
+  <!-- ── Main ────────────────────────────────────────────────────────────── -->
+  <main class="main">
+    <div class="panel">
+      <h2>Test Goal Simulation</h2>
+
+      <div class="field">
+        <label>Bulb IP Address</label>
+        <input type="text" id="bulb-ip" placeholder="192.168.x.x" />
+      </div>
+
+      <div class="field">
+        <label>Flash Duration (s)</label>
+        <input type="number" id="flash_duration" value="12" min="1" step="1" />
+      </div>
+
+      <div class="field">
+        <label>Flash Interval (s)</label>
+        <input type="number" id="flash_interval" value="0.45" min="0.05" step="0.05" />
+      </div>
+
+      <div class="field">
+        <label>Flash Transition (ms)</label>
+        <input type="number" id="flash_transition_ms" value="120" min="0" step="10" />
+      </div>
+
+      <div class="field">
+        <label>Team</label>
+        <select id="test-team">
+          <option value="">Select team...</option>
+        </select>
+      </div>
+
+      <button class="btn btn-primary" id="simulate-goal-btn" style="width:100%;justify-content:center">Simulate Goal</button>
+      <div class="test-result" id="simulate-result"></div>
+    </div>
+  </main>
+
+</div><!-- /.app -->
+
+<script>
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const themeBtn = $("theme-btn");
+const simulateGoalBtn = $("simulate-goal-btn");
+const simulateResult = $("simulate-result");
+
+// ── Theme ────────────────────────────────────────────────────────────────────
+themeBtn.addEventListener("click", () => {
+  const html = document.documentElement;
+  const isDark = html.dataset.theme !== "light";
+  html.dataset.theme = isDark ? "light" : "dark";
+  themeBtn.textContent = isDark ? "☀️" : "🌙";
+});
+
+// ── Team colors + swatch ─────────────────────────────────────────────────────
+let _teamColors = {};
+
+async function loadTeamColors() {
+  try {
+    const r = await fetch("/api/team-colors");
+    if (r.ok) _teamColors = await r.json();
+    // Populate test team select
+    const select = $("test-team");
+    select.innerHTML = '<option value="">Select team...</option>';
+    Object.keys(_teamColors).sort().forEach(abbrev => {
+      const opt = document.createElement("option");
+      opt.value = abbrev;
+      opt.textContent = abbrev;
+      select.appendChild(opt);
+    });
+  } catch (_) {}
+}
+
+// ── Simulate goal ─────────────────────────────────────────────────────────────
+simulateGoalBtn.addEventListener("click", async () => {
+  const ip = $("bulb-ip").value.trim();
+  const team = $("test-team").value.trim();
+  const flash_duration = parseFloat($("flash_duration").value);
+  const flash_interval = parseFloat($("flash_interval").value);
+  const flash_transition_ms = parseInt($("flash_transition_ms").value);
+
+  if (!ip) { simulateResult.className = "test-result err"; simulateResult.textContent = "✗ Enter an IP first"; return; }
+  if (!team) { simulateResult.className = "test-result err"; simulateResult.textContent = "✗ Select a team first"; return; }
+  if (isNaN(flash_duration) || flash_duration <= 0) { simulateResult.className = "test-result err"; simulateResult.textContent = "✗ Invalid flash duration"; return; }
+  if (isNaN(flash_interval) || flash_interval <= 0) { simulateResult.className = "test-result err"; simulateResult.textContent = "✗ Invalid flash interval"; return; }
+  if (isNaN(flash_transition_ms) || flash_transition_ms < 0) { simulateResult.className = "test-result err"; simulateResult.textContent = "✗ Invalid transition"; return; }
+
+  simulateGoalBtn.disabled = true;
+  simulateResult.className = "test-result";
+  simulateResult.textContent = "Simulating…";
+  try {
+    const params = new URLSearchParams({
+      ip, team,
+      flash_duration: flash_duration.toString(),
+      flash_interval: flash_interval.toString(),
+      flash_transition_ms: flash_transition_ms.toString(),
+    });
+    const r = await fetch(`/api/simulate-goal?${params}`);
+    const d = await r.json();
+    if (d.ok) {
+      simulateResult.className = "test-result ok";
+      simulateResult.textContent = `✓ Simulated goal for ${team}`;
+    } else {
+      simulateResult.className = "test-result err";
+      simulateResult.textContent = `✗ ${d.error || "Failed"}`;
+    }
+  } catch (e) {
+    simulateResult.className = "test-result err";
+    simulateResult.textContent = `✗ ${e.message}`;
+  } finally {
+    simulateGoalBtn.disabled = false;
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async () => {
+  await loadTeamColors();
+})();
+</script>
+
+</body>
+</html>

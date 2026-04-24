@@ -111,6 +111,11 @@ def index():
     return send_from_directory(HERE, "nhl-goal-light-gui.html")
 
 
+@app.route("/test.html")
+def test_page():
+    return send_from_directory(HERE, "test.html")
+
+
 @app.route("/api/games")
 def api_games():
     global _games_cache, _games_cache_ts
@@ -310,6 +315,10 @@ def api_simulate_goal():
     """Simulate a goal for testing: flash the bulb with the team's colors."""
     ip = request.args.get("ip", "").strip()
     team = request.args.get("team", "").strip().upper()
+    flash_duration = float(request.args.get("flash_duration", "12"))
+    flash_interval = float(request.args.get("flash_interval", "0.45"))
+    flash_transition_ms = int(request.args.get("flash_transition_ms", "120"))
+
     if not ip:
         return jsonify({"ok": False, "error": "No IP provided"})
     if not team:
@@ -318,15 +327,15 @@ def api_simulate_goal():
     if team not in main_final.TEAM_COLORS:
         return jsonify({"ok": False, "error": f"Unknown team: {team}"})
     
-    # Create minimal config
+    # Create config with provided settings
     config = main_final.AppConfig(
         bulb_ip=ip,
         request_timeout=10.0,
         max_retries=4,
         backoff_base=1.0,
         backoff_max=30.0,
-        flash_duration=12.0,
-        flash_interval=0.45,
+        flash_duration=flash_duration,
+        flash_interval=flash_interval,
         flash_quiet_window=1.5,
         pregame_buffer_seconds=300,
         poll_live_seconds=1.0,
@@ -334,13 +343,14 @@ def api_simulate_goal():
         poll_pregame_seconds=10.0,
         poll_error_seconds=5.0,
         restore_transition_ms=150,
-        flash_transition_ms=120,
+        flash_transition_ms=flash_transition_ms,
     )
 
     async def _simulate():
         bulb = main_final.BulbController(config)
         snapshot = await bulb.capture_state()
         await bulb.flash_team(team, snapshot)
+        await main_final._safe_restore(bulb, snapshot)
         await bulb.shutdown()
 
     asyncio.run(_simulate())

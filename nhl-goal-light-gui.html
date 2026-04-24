@@ -17,8 +17,8 @@
   --border:    #2e2d2a;
   --text:      #e8e6e0;
   --muted:     #7a7870;
-  --accent:    #4f98a3;
-  --accent-dim:#2e5f68;
+  --accent:    #cc0000;
+  --accent-dim:#8b0000;
   --red:       #d44c4c;
   --green:     #4caf50;
   --yellow:    #c9a227;
@@ -357,6 +357,7 @@ header {
     </svg>
     <span class="logo">NHL <span>Goal Light</span></span>
     <div class="header-right">
+      <a href="/test.html" class="btn btn-primary" style="padding: 4px 8px; font-size: 11px;">Test</a>
       <span class="status-pill" id="status-pill">Idle</span>
       <button class="theme-btn" id="theme-btn" title="Toggle theme">🌙</button>
     </div>
@@ -403,18 +404,6 @@ header {
       <div class="section-label">Timing</div>
       <div class="field"><label>Pregame buffer (s)</label><input type="number" id="pregame_buffer_seconds" value="300" min="0" step="30" /></div>
       <div class="field"><label>Restore transition (ms)</label><input type="number" id="restore_transition_ms" value="150" min="0" step="10" /></div>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="section-label">Testing</div>
-      <div class="field">
-        <label>Team</label>
-        <select id="test-team">
-          <option value="">Select team...</option>
-        </select>
-      </div>
-      <button class="btn" id="simulate-goal-btn" style="width:100%;justify-content:center">Simulate Goal</button>
-      <div class="test-result" id="simulate-result"></div>
     </div>
 
   </aside>
@@ -476,8 +465,6 @@ const startBtn     = $("start-btn");
 const stopBtn      = $("stop-btn");
 const testBtn      = $("test-btn");
 const testResult   = $("test-result");
-const simulateGoalBtn = $("simulate-goal-btn");
-const simulateResult  = $("simulate-result");
 const themeBtn     = $("theme-btn");
 const logWrap      = $("log-wrap");
 const autoscroll   = $("autoscroll");
@@ -659,33 +646,6 @@ testBtn.addEventListener("click", async () => {
   }
 });
 
-// ── Simulate goal ─────────────────────────────────────────────────────────────
-simulateGoalBtn.addEventListener("click", async () => {
-  const ip = $("bulb-ip").value.trim();
-  const team = $("test-team").value.trim();
-  if (!ip) { simulateResult.className = "test-result err"; simulateResult.textContent = "✗ Enter an IP first"; return; }
-  if (!team) { simulateResult.className = "test-result err"; simulateResult.textContent = "✗ Select a team first"; return; }
-  simulateGoalBtn.disabled = true;
-  simulateResult.className = "test-result";
-  simulateResult.textContent = "Simulating…";
-  try {
-    const r = await fetch(`/api/simulate-goal?ip=${encodeURIComponent(ip)}&team=${encodeURIComponent(team)}`);
-    const d = await r.json();
-    if (d.ok) {
-      simulateResult.className = "test-result ok";
-      simulateResult.textContent = `✓ Simulated goal for ${team}`;
-    } else {
-      simulateResult.className = "test-result err";
-      simulateResult.textContent = `✗ ${d.error || "Failed"}`;
-    }
-  } catch (e) {
-    simulateResult.className = "test-result err";
-    simulateResult.textContent = `✗ ${e.message}`;
-  } finally {
-    simulateGoalBtn.disabled = false;
-  }
-});
-
 // ── SSE ───────────────────────────────────────────────────────────────────────
 function openSSE() {
   if (_es) { _es.close(); _es = null; }
@@ -780,7 +740,6 @@ stopBtn.addEventListener("click", async () => {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async () => {
-  await loadTeamColors();
   await fetchGames();
   await pollStatus();
   _statusTimer = setInterval(pollStatus, 3000);
