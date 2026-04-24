@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NHL Goal Light</title>
+<link rel="preconnect" href="https://api.fontshare.com" />
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet" />
+<style>
+/* ── Reset & tokens ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #171614;
+  --surface:   #1c1b19;
+  --surface2:  #242320;
+  --border:    #2e2d2a;
+  --text:      #e8e6e0;
+  --muted:     #7a7870;
+  --accent:    #4f98a3;
+  --accent-dim:#2e5f68;
+  --red:       #d44c4c;
+  --green:     #4caf50;
+  --yellow:    #c9a227;
+  --radius:    5px;
+  --sidebar-w: 220px;
+}
+
+[data-theme="light"] {
+  --bg:       #f4f3f0;
+  --surface:  #ffffff;
+  --surface2: #ebebea;
+  --border:   #d0cfc9;
+  --text:     #1a1916;
+  --muted:    #7a7870;
+}
+
+html, body {
+  height: 100%;
+  font-family: 'Satoshi', system-ui, sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.app {
+  display: grid;
+  grid-template-rows: 44px 1fr;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.logo {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+.logo span { color: var(--accent); }
+
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-pill {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 10px;
+  border-radius: 20px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  transition: background .2s, color .2s;
+}
+.status-pill.monitoring {
+  background: #1a3a1e;
+  border-color: #2d6633;
+  color: var(--green);
+}
+
+.theme-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  width: 28px; height: 28px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color .15s, color .15s;
+}
+.theme-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Sidebar ────────────────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px 0 24px;
+}
+
+.sidebar-section {
+  padding: 0 12px;
+  margin-bottom: 18px;
+}
+
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+.field { margin-bottom: 7px; }
+
+.field label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.field input[type="text"],
+.field input[type="number"] {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+  transition: border-color .15s;
+}
+.field input:focus { border-color: var(--accent); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s, opacity .15s;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn:disabled { opacity: .38; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: #fff;
+}
+
+.btn-danger {
+  border-color: var(--red);
+  color: var(--red);
+}
+.btn-danger:hover:not(:disabled) {
+  background: #3a1515;
+  border-color: var(--red);
+}
+
+.test-result {
+  margin-top: 5px;
+  font-size: 11px;
+  min-height: 16px;
+}
+.test-result.ok  { color: var(--green); }
+.test-result.err { color: var(--red); }
+
+/* ── Main content ───────────────────────────────────────────────────────── */
+.main {
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.panel-header-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── Games list ─────────────────────────────────────────────────────────── */
+#game-list {
+  list-style: none;
+}
+
+.game-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .1s;
+}
+.game-row:last-child { border-bottom: none; }
+.game-row:hover { background: var(--surface2); }
+
+.game-row input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+
+.game-matchup {
+  flex: 1;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.game-time {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.game-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: .04em;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.game-badge.live  { background: #1a3a1e; border-color: #2d6633; color: var(--green); }
+.game-badge.final { background: var(--surface2); color: var(--muted); }
+.game-badge.fut   { background: var(--surface2); color: var(--muted); }
+
+.team-swatches {
+  display: flex;
+  gap: 3px;
+}
+.swatch {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  border: 1px solid rgba(255,255,255,.08);
+}
+
+.games-empty {
+  padding: 20px 14px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ── Log ────────────────────────────────────────────────────────────────── */
+.log-wrap {
+  background: #0e0e0c;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 11.5px;
+  height: 260px;
+  overflow-y: auto;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.log-line { line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+.log-line.goal  { color: var(--accent); font-weight: 600; }
+.log-line.error { color: var(--red); }
+.log-line.done  { color: var(--muted); font-style: italic; }
+
+.log-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+}
+
+.autoscroll-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.autoscroll-label input { accent-color: var(--accent); }
+
+/* ── Controls bar ───────────────────────────────────────────────────────── */
+.controls {
+  display: flex;
+  gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ── Favicon SVG ────────────────────────────────────────────────────────── */
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <header>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4f98a3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M12 8v4l3 3"/>
+    </svg>
+    <span class="logo">NHL <span>Goal Light</span></span>
+    <div class="header-right">
+      <span class="status-pill" id="status-pill">Idle</span>
+      <button class="theme-btn" id="theme-btn" title="Toggle theme">🌙</button>
+    </div>
+  </header>
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <div class="sidebar-section">
+      <div class="section-label">Bulb</div>
+      <div class="field">
+        <label>IP Address</label>
+        <input type="text" id="bulb-ip" placeholder="192.168.x.x" />
+      </div>
+      <button class="btn" id="test-btn" style="width:100%;justify-content:center">Test Connection</button>
+      <div class="test-result" id="test-result"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">Flash</div>
+      <div class="field"><label>Duration (s)</label><input type="number" id="flash_duration" value="12" min="1" step="1" /></div>
+      <div class="field"><label>Interval (s)</label><input type="number" id="flash_interval" value="0.45" min="0.05" step="0.05" /></div>
+      <div class="field"><label>Quiet window (s)</label><input type="number" id="flash_quiet_window" value="1.5" min="0" step="0.1" /></div>
+      <div class="field"><label>Transition (ms)</label><input type="number" id="flash_transition_ms" value="120" min="0" step="10" /></div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">Polling</div>
+      <div class="field"><label>Live (s)</label><input type="number" id="poll_live_seconds" value="1.0" min="0.1" step="0.1" /></div>
+      <div class="field"><label>Critical (s)</label><input type="number" id="poll_critical_seconds" value="0.75" min="0.1" step="0.05" /></div>
+      <div class="field"><label>Pregame (s)</label><input type="number" id="poll_pregame_seconds" value="10" min="1" step="1" /></div>
+      <div class="field"><label>Error (s)</label><input type="number" id="poll_error_seconds" value="5" min="1" step="1" /></div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">Network</div>
+      <div class="field"><label>Request timeout (s)</label><input type="number" id="request_timeout" value="10" min="1" step="1" /></div>
+      <div class="field"><label>Max retries</label><input type="number" id="max_retries" value="4" min="0" step="1" /></div>
+      <div class="field"><label>Backoff base (s)</label><input type="number" id="backoff_base" value="1.0" min="0.1" step="0.1" /></div>
+      <div class="field"><label>Backoff max (s)</label><input type="number" id="backoff_max" value="30.0" min="1" step="1" /></div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">Timing</div>
+      <div class="field"><label>Pregame buffer (s)</label><input type="number" id="pregame_buffer_seconds" value="300" min="0" step="30" /></div>
+      <div class="field"><label>Restore transition (ms)</label><input type="number" id="restore_transition_ms" value="150" min="0" step="10" /></div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main ────────────────────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Games panel -->
+    <div class="panel">
+      <div class="panel-header">
+        <span>Today's Games</span>
+        <div class="panel-header-actions">
+          <button class="btn" id="select-all-btn">Select All</button>
+          <button class="btn" id="deselect-all-btn">Deselect All</button>
+          <button class="btn" id="refresh-games-btn">↻ Refresh</button>
+        </div>
+      </div>
+      <ul id="game-list">
+        <li class="games-empty" id="games-loading">Loading games…</li>
+      </ul>
+    </div>
+
+    <!-- Log panel -->
+    <div class="panel" style="flex:1;display:flex;flex-direction:column;">
+      <div class="panel-header">
+        <span>Live Log</span>
+        <div class="panel-header-actions">
+          <button class="btn" id="clear-log-btn">Clear</button>
+        </div>
+      </div>
+      <div class="log-wrap" id="log-wrap"></div>
+      <div class="log-footer">
+        <label class="autoscroll-label">
+          <input type="checkbox" id="autoscroll" checked /> Auto-scroll
+        </label>
+      </div>
+      <div class="controls">
+        <button class="btn btn-primary" id="start-btn">▶ Start Monitoring</button>
+        <button class="btn btn-danger" id="stop-btn" disabled>■ Stop</button>
+      </div>
+    </div>
+
+  </main>
+
+</div><!-- /.app -->
+
+<script>
+"use strict";
+
+// ── State ────────────────────────────────────────────────────────────────────
+let _es = null;           // active EventSource
+let _statusTimer = null;  // setInterval for status polling
+let _teamColors = {};     // { ABBREV: { primary:[h,s,v], secondary:[h,s,v] } }
+
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const statusPill   = $("status-pill");
+const startBtn     = $("start-btn");
+const stopBtn      = $("stop-btn");
+const testBtn      = $("test-btn");
+const testResult   = $("test-result");
+const themeBtn     = $("theme-btn");
+const logWrap      = $("log-wrap");
+const autoscroll   = $("autoscroll");
+const gameList     = $("game-list");
+const clearLogBtn  = $("clear-log-btn");
+const refreshBtn   = $("refresh-games-btn");
+const selectAll    = $("select-all-btn");
+const deselectAll  = $("deselect-all-btn");
+
+// ── Theme ────────────────────────────────────────────────────────────────────
+themeBtn.addEventListener("click", () => {
+  const html = document.documentElement;
+  const dark = html.getAttribute("data-theme") === "dark";
+  html.setAttribute("data-theme", dark ? "light" : "dark");
+  themeBtn.textContent = dark ? "☀️" : "🌙";
+});
+
+// ── Log helpers ──────────────────────────────────────────────────────────────
+function appendLog(text, cls = "") {
+  const div = document.createElement("div");
+  div.className = "log-line" + (cls ? " " + cls : "");
+  div.textContent = text;
+  logWrap.appendChild(div);
+  if (autoscroll.checked) logWrap.scrollTop = logWrap.scrollHeight;
+}
+
+function classifyLine(line) {
+  const u = line.toUpperCase();
+  if (u.includes("GOAL"))                    return "goal";
+  if (u.includes("ERROR") || u.includes("EXCEPTION") || u.includes("TRACEBACK")) return "error";
+  if (line.trim() === "[DONE]")              return "done";
+  return "";
+}
+
+clearLogBtn.addEventListener("click", () => { logWrap.innerHTML = ""; });
+
+// ── Team colors + swatch ─────────────────────────────────────────────────────
+function hsvToHex(h, s, v) {
+  // h: 0-360, s: 0-100, v: 0-100
+  s /= 100; v /= 100;
+  const f = n => {
+    const k = (n + h / 60) % 6;
+    return v - v * s * Math.max(0, Math.min(k, 4 - k, 1));
+  };
+  const toHex = x => Math.round(x * 255).toString(16).padStart(2, "0");
+  return `#${toHex(f(5))}${toHex(f(3))}${toHex(f(1))}`;
+}
+
+function makeSwatch(hsv) {
+  const [h, s, v] = hsv;
+  const el = document.createElement("div");
+  el.className = "swatch";
+  el.style.background = (v === 0 && s === 0) ? "#111" : hsvToHex(h, s, v);
+  return el;
+}
+
+async function loadTeamColors() {
+  try {
+    const r = await fetch("/api/team-colors");
+    if (r.ok) _teamColors = await r.json();
+  } catch (_) {}
+}
+
+// ── Games ────────────────────────────────────────────────────────────────────
+function badgeClass(state) {
+  if (state === "LIVE" || state === "CRIT") return "live";
+  if (state === "FINAL" || state === "OFF")  return "final";
+  return "fut";
+}
+
+function renderGames(games) {
+  gameList.innerHTML = "";
+  if (!games || games.length === 0) {
+    gameList.innerHTML = '<li class="games-empty">No games scheduled today.</li>';
+    return;
+  }
+  games.forEach(g => {
+    const li = document.createElement("li");
+    li.className = "game-row";
+    li.dataset.gameId = g.id;
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = g.id;
+    cb.id = `game-${g.id}`;
+
+    const matchup = document.createElement("label");
+    matchup.htmlFor = `game-${g.id}`;
+    matchup.className = "game-matchup";
+    matchup.style.cursor = "pointer";
+    matchup.textContent = `${g.away_abbrev} @ ${g.home_abbrev}`;
+
+    const time = document.createElement("span");
+    time.className = "game-time";
+    time.textContent = g.start_time_local;
+
+    const badge = document.createElement("span");
+    badge.className = `game-badge ${badgeClass(g.game_state)}`;
+    badge.textContent = g.game_state || "?";
+
+    // Swatches
+    const swatches = document.createElement("div");
+    swatches.className = "team-swatches";
+
+    const awayColors = _teamColors[g.away_abbrev];
+    const homeColors = _teamColors[g.home_abbrev];
+    if (awayColors) {
+      swatches.appendChild(makeSwatch(awayColors.primary));
+      swatches.appendChild(makeSwatch(awayColors.secondary));
+    }
+    if (homeColors) {
+      const sep = document.createElement("div");
+      sep.style.cssText = "width:4px";
+      swatches.appendChild(sep);
+      swatches.appendChild(makeSwatch(homeColors.primary));
+      swatches.appendChild(makeSwatch(homeColors.secondary));
+    }
+
+    li.append(cb, matchup, time, badge, swatches);
+    li.addEventListener("click", e => {
+      if (e.target === cb) return;
+      cb.checked = !cb.checked;
+    });
+    gameList.appendChild(li);
+  });
+}
+
+async function fetchGames() {
+  gameList.innerHTML = '<li class="games-empty" id="games-loading">Loading games…</li>';
+  try {
+    const r = await fetch("/api/games");
+    const data = await r.json();
+    if (Array.isArray(data)) renderGames(data);
+    else gameList.innerHTML = `<li class="games-empty">Error: ${data.error || "Unknown"}</li>`;
+  } catch (e) {
+    gameList.innerHTML = `<li class="games-empty">Network error: ${e.message}</li>`;
+  }
+}
+
+selectAll.addEventListener("click", () => {
+  gameList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+});
+deselectAll.addEventListener("click", () => {
+  gameList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+});
+refreshBtn.addEventListener("click", fetchGames);
+
+// ── Bulb test ─────────────────────────────────────────────────────────────────
+testBtn.addEventListener("click", async () => {
+  const ip = $("bulb-ip").value.trim();
+  if (!ip) { testResult.className = "test-result err"; testResult.textContent = "✗ Enter an IP first"; return; }
+  testBtn.disabled = true;
+  testResult.className = "test-result";
+  testResult.textContent = "Testing…";
+  try {
+    const r = await fetch(`/api/test-bulb?ip=${encodeURIComponent(ip)}`);
+    const d = await r.json();
+    if (d.ok) {
+      testResult.className = "test-result ok";
+      testResult.textContent = `✓ ${d.model || "Connected"}`;
+    } else {
+      testResult.className = "test-result err";
+      testResult.textContent = `✗ ${d.error || "Failed"}`;
+    }
+  } catch (e) {
+    testResult.className = "test-result err";
+    testResult.textContent = `✗ ${e.message}`;
+  } finally {
+    testBtn.disabled = false;
+  }
+});
+
+// ── SSE ───────────────────────────────────────────────────────────────────────
+function openSSE() {
+  if (_es) { _es.close(); _es = null; }
+  _es = new EventSource("/api/log");
+  _es.onmessage = e => {
+    const line = e.data;
+    if (line === "[DONE]") {
+      appendLog("— monitoring ended —", "done");
+      _es.close(); _es = null;
+      setMonitoringState(false);
+      return;
+    }
+    appendLog(line, classifyLine(line));
+  };
+  _es.onerror = () => {
+    // Server gone or process exited; don't spam reconnects
+    if (_es) { _es.close(); _es = null; }
+  };
+}
+
+// ── Status polling ────────────────────────────────────────────────────────────
+function setMonitoringState(active) {
+  statusPill.textContent = active ? "Monitoring" : "Idle";
+  statusPill.className   = "status-pill" + (active ? " monitoring" : "");
+  startBtn.disabled = active;
+  stopBtn.disabled  = !active;
+}
+
+async function pollStatus() {
+  try {
+    const r = await fetch("/api/status");
+    const d = await r.json();
+    setMonitoringState(d.state === "monitoring");
+  } catch (_) {}
+}
+
+// ── Start / Stop ──────────────────────────────────────────────────────────────
+startBtn.addEventListener("click", async () => {
+  const ip = $("bulb-ip").value.trim();
+  if (!ip) { alert("Enter a bulb IP address first."); return; }
+
+  const gameIds = Array.from(
+    gameList.querySelectorAll('input[type="checkbox"]:checked')
+  ).map(cb => Number(cb.value));
+
+  if (gameIds.length === 0) { alert("Select at least one game."); return; }
+
+  const body = {
+    bulb_ip:               ip,
+    game_ids:              gameIds,
+    flash_duration:        parseFloat($("flash_duration").value),
+    flash_interval:        parseFloat($("flash_interval").value),
+    flash_quiet_window:    parseFloat($("flash_quiet_window").value),
+    flash_transition_ms:   parseInt($("flash_transition_ms").value),
+    poll_live_seconds:     parseFloat($("poll_live_seconds").value),
+    poll_critical_seconds: parseFloat($("poll_critical_seconds").value),
+    poll_pregame_seconds:  parseFloat($("poll_pregame_seconds").value),
+    poll_error_seconds:    parseFloat($("poll_error_seconds").value),
+    request_timeout:       parseFloat($("request_timeout").value),
+    max_retries:           parseInt($("max_retries").value),
+    backoff_base:          parseFloat($("backoff_base").value),
+    backoff_max:           parseFloat($("backoff_max").value),
+    pregame_buffer_seconds:parseInt($("pregame_buffer_seconds").value),
+    restore_transition_ms: parseInt($("restore_transition_ms").value),
+  };
+
+  try {
+    const r = await fetch("/api/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || "Failed to start"); return; }
+    openSSE();
+    setMonitoringState(true);
+  } catch (e) {
+    alert("Error: " + e.message);
+  }
+});
+
+stopBtn.addEventListener("click", async () => {
+  try {
+    await fetch("/api/stop", { method: "POST" });
+    setMonitoringState(false);
+    if (_es) { _es.close(); _es = null; }
+    appendLog("— stopped by user —", "done");
+  } catch (e) {
+    alert("Error: " + e.message);
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async () => {
+  await loadTeamColors();
+  await fetchGames();
+  await pollStatus();
+  _statusTimer = setInterval(pollStatus, 3000);
+})();
+</script>
+
+</body>
+</html>
