@@ -21,7 +21,6 @@ import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-import requests as _req  # only used for the NHL proxy; stdlib urllib works too
 from flask import Flask, Response, jsonify, request, send_from_directory, stream_with_context
 
 # ── optional: fall back to urllib if requests isn't installed ─────────────────
@@ -328,7 +327,7 @@ def api_simulate_goal():
 
         if team not in main_final.TEAM_COLORS:
             return jsonify({"ok": False, "error": f"Unknown team: {team}"})
-        
+
         # Create config with provided settings
         config = main_final.AppConfig(
             bulb_ip=ip,
@@ -346,6 +345,7 @@ def api_simulate_goal():
             poll_error_seconds=5.0,
             restore_transition_ms=150,
             flash_transition_ms=flash_transition_ms,
+            goal_delay_seconds=0,
         )
 
         async def _simulate():
