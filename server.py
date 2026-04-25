@@ -64,7 +64,6 @@ ENV_MAP = {
     "flash_duration":         "FLASH_DURATION",
     "flash_interval":         "FLASH_INTERVAL",
     "flash_quiet_window":     "FLASH_QUIET_WINDOW",
-    "flash_transition_ms":    "FLASH_TRANSITION_MS",
     "poll_live_seconds":      "POLL_LIVE_SECONDS",
     "poll_critical_seconds":  "POLL_CRITICAL_SECONDS",
     "poll_pregame_seconds":   "POLL_PREGAME_SECONDS",
@@ -313,7 +312,6 @@ def api_simulate_goal():
         team = request.args.get("team", "").strip().upper()
         flash_duration = float(request.args.get("flash_duration", "12"))
         flash_interval = float(request.args.get("flash_interval", "0.45"))
-        flash_transition_ms = int(request.args.get("flash_transition_ms", "120"))
 
         if not ip:
             return jsonify({"ok": False, "error": "No IP provided"})
@@ -323,7 +321,6 @@ def api_simulate_goal():
         if team not in main.TEAM_COLORS:
             return jsonify({"ok": False, "error": f"Unknown team: {team}"})
 
-        # Create config with provided settings
         config = main.AppConfig(
             bulb_ip=ip,
             request_timeout=10.0,
@@ -339,7 +336,6 @@ def api_simulate_goal():
             poll_pregame_seconds=10.0,
             poll_error_seconds=5.0,
             restore_transition_ms=150,
-            flash_transition_ms=flash_transition_ms,
             goal_delay_seconds=0,
         )
 
