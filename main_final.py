@@ -99,6 +99,7 @@ class AppConfig:
     poll_error_seconds: float
     restore_transition_ms: int
     flash_transition_ms: int
+    goal_delay_seconds: int
 
 
 @dataclass(frozen=True)
@@ -170,6 +171,7 @@ def build_config() -> AppConfig:
         poll_error_seconds=float(os.getenv("POLL_ERROR_SECONDS", "5")),
         restore_transition_ms=int(os.getenv("RESTORE_TRANSITION_MS", "150")),
         flash_transition_ms=int(os.getenv("FLASH_TRANSITION_MS", "120")),
+        goal_delay_seconds=int(os.getenv("GOAL_DELAY_SECONDS", "35")),
     )
 
 
@@ -501,23 +503,18 @@ class BulbController:
                 use_primary = True
 
                 while loop.time() < end:
-                    hsv = palette.primary if use_primary else palette.secondary
-
-                    if snapshot.supports_color:
-                        h, s, v = hsv
-                        if v == 0:
-                            await self._bulb.turn_off()
+                    if use_primary:
+                        # Flash on with primary color at full brightness
+                        if snapshot.supports_color:
+                            h, s, _ = palette.primary
+                            await self._bulb.turn_on()
+                            await self._set_hsv_safe(h, s, 100, 0)
                         else:
                             await self._bulb.turn_on()
-                            await self._set_hsv_safe(
-                                h, s, _clamp(v, 1, 100), self._config.flash_transition_ms,
-                            )
+                            await self._set_brightness_safe(100, 0)
                     else:
-                        brightness = 100 if use_primary else 20
-                        await self._bulb.turn_on()
-                        await self._set_brightness_safe(
-                            brightness, self._config.flash_transition_ms,
-                        )
+                        # Flash off (strobe)
+                        await self._bulb.turn_off()
 
                     use_primary = not use_primary
                     await asyncio.sleep(self._config.flash_interval)
@@ -661,6 +658,8 @@ async def monitor_game(
                     status.away_abbrev, a, status.home_abbrev, h,
                 )
                 for _ in range(away_delta):
+                    # Delay goal trigger by configured offset (for TV stream delay)
+                    await _interruptible_sleep(config.goal_delay_seconds, shutdown)
                     await goal_queue.put(GoalEvent(game.game_id, status.away_abbrev))
 
             if home_delta:
@@ -670,6 +669,8 @@ async def monitor_game(
                     status.away_abbrev, a, status.home_abbrev, h,
                 )
                 for _ in range(home_delta):
+                    # Delay goal trigger by configured offset (for TV stream delay)
+                    await _interruptible_sleep(config.goal_delay_seconds, shutdown)
                     await goal_queue.put(GoalEvent(game.game_id, status.home_abbrev))
 
         last_status = status

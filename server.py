@@ -76,6 +76,7 @@ ENV_MAP = {
     "backoff_max":            "NHL_BACKOFF_MAX",
     "pregame_buffer_seconds": "PREGAME_BUFFER_SECONDS",
     "restore_transition_ms":  "RESTORE_TRANSITION_MS",
+    "goal_delay_seconds":     "GOAL_DELAY_SECONDS",
 }
 
 
