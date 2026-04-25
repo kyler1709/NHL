@@ -12,6 +12,7 @@ import logging
 import os
 import random
 import signal
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -92,6 +93,7 @@ class AppConfig:
     poll_pregame_seconds: float
     poll_error_seconds: float
     restore_transition_ms: int
+    flash_transition_ms: int
     goal_delay_seconds: int
 
 
@@ -163,6 +165,7 @@ def build_config() -> AppConfig:
         poll_pregame_seconds=float(os.getenv("POLL_PREGAME_SECONDS", "10")),
         poll_error_seconds=float(os.getenv("POLL_ERROR_SECONDS", "5")),
         restore_transition_ms=int(os.getenv("RESTORE_TRANSITION_MS", "150")),
+        flash_transition_ms=int(os.getenv("FLASH_TRANSITION_MS", "120")),
         goal_delay_seconds=int(os.getenv("GOAL_DELAY_SECONDS", "35")),
     )
 
@@ -375,46 +378,6 @@ class BulbController:
         self._connected = False
         await self._ensure_connected()
 
-    async def _transition_light_state(self, state: dict) -> None:
-        """Send a raw transition_light_state command via the bulb protocol."""
-        await self._bulb.protocol.query(
-            {
-                "smartlife.iot.smartbulb.lightingservice": {
-                    "transition_light_state": state
-                }
-            }
-        )
-
-    async def _flash_hsv(self, hue: int, saturation: int, brightness: int) -> None:
-        """Instant colour change. color_temp=0 keeps bulb in HSV mode."""
-        await self._transition_light_state({
-            "on_off": 1,
-            "mode": "normal",
-            "hue": hue,
-            "saturation": saturation,
-            "brightness": brightness,
-            "color_temp": 0,
-            "transition_period": 0,
-            "ignore_default": 1,
-        })
-
-    async def _flash_off(self) -> None:
-        """Instant off."""
-        await self._transition_light_state({
-            "on_off": 0,
-            "transition_period": 0,
-            "ignore_default": 1,
-        })
-
-    async def _flash_brightness(self, brightness: int) -> None:
-        """Instant brightness-only change for non-colour bulbs."""
-        await self._transition_light_state({
-            "on_off": 1,
-            "brightness": brightness,
-            "transition_period": 0,
-            "ignore_default": 1,
-        })
-
     async def _set_hsv_safe(self, hue: int, saturation: int, value: int, transition_ms: int) -> None:
         try:
             await self._light.set_hsv(hue, saturation, value, transition=transition_ms)
@@ -435,6 +398,14 @@ class BulbController:
                 await self._light.set_color_temp(color_temp, brightness=brightness)
             except TypeError:
                 await self._light.set_color_temp(color_temp)
+
+    async def _turn_off_instant(self) -> None:
+        """Turn off the bulb with transition=0. Firmware on this bulb
+        honours transition=0 on turn_off, giving a true instant cut."""
+        try:
+            await self._bulb.turn_off(transition=0)
+        except TypeError:
+            await self._bulb.turn_off()
 
     async def capture_state(self) -> BulbSnapshot:
         async with self._io_lock:
@@ -490,51 +461,32 @@ class BulbController:
 
     async def flash_team(self, team_abbrev: str, snapshot: BulbSnapshot) -> None:
         palette = TEAM_COLORS.get(team_abbrev, DEFAULT_PALETTE)
-        h0, s0, v0 = palette.primary
 
         async with self._io_lock:
             try:
                 await self._ensure_connected()
-                # Reset staleness so _ensure_connected does NOT fire mid-flash
-                # (a bulb.update() call mid-loop would steal time from one colour).
-                self._last_updated = datetime.min.replace(tzinfo=timezone.utc)
-
-                # --- Colour-mode primer ---
-                # The bulb live state may have color_temp != 0 (e.g. 2700 K warm
-                # white). If we immediately send HSV commands while color_temp is
-                # non-zero the firmware blends FROM warm-white TO the target colour,
-                # producing a white flash on the very first cycle.
-                # Sending one instant HSV command BEFORE the loop forces the bulb
-                # into pure HSV mode (color_temp = 0) so every subsequent flash
-                # transitions colour-to-colour with no white midpoint.
-                if snapshot.supports_color:
-                    await self._flash_hsv(h0, s0, _clamp(v0, 1, 100))
+                await self._bulb.turn_on()
 
                 loop = asyncio.get_running_loop()
                 end = loop.time() + self._config.flash_duration
                 use_primary = True
 
-                # Deadline-based timing: absorb per-command Wi-Fi latency so
-                # both colours show for exactly flash_interval seconds each.
-                next_tick = loop.time() + self._config.flash_interval
-
                 while loop.time() < end:
                     h, s, v = palette.primary if use_primary else palette.secondary
 
                     if v == 0:
-                        await self._flash_off()
+                        await self._turn_off_instant()
                     elif snapshot.supports_color:
-                        await self._flash_hsv(h, s, _clamp(v, 1, 100))
+                        await self._set_hsv_safe(h, s, _clamp(v, 1, 100),
+                                                 self._config.flash_transition_ms)
                     else:
-                        await self._flash_brightness(_clamp(v, 1, 100))
+                        await self._set_brightness_safe(_clamp(v, 1, 100),
+                                                        self._config.flash_transition_ms)
 
                     use_primary = not use_primary
+                    await asyncio.sleep(self._config.flash_interval)
 
-                    remaining = next_tick - loop.time()
-                    if remaining > 0:
-                        await asyncio.sleep(remaining)
-                    next_tick += self._config.flash_interval
-
+                await self._bulb.turn_on()
             except Exception:
                 log.exception("Error during flash for team %s — reconnecting.", team_abbrev)
                 try:
