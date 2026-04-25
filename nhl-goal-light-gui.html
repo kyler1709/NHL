@@ -142,7 +142,9 @@ header {
 .field { margin-bottom: 7px; }
 
 .field label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   color: var(--muted);
   margin-bottom: 3px;
@@ -223,6 +225,48 @@ header {
 }
 .test-result.ok  { color: var(--green); }
 .test-result.err { color: var(--red); }
+
+/* ── Tooltip ────────────────────────────────────────────────────────────── */
+.tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: default;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #111;
+  color: #e8e6e0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-weight: 400;
+  white-space: pre-wrap;
+  width: 180px;
+  z-index: 999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  line-height: 1.45;
+}
+
+.tip:hover::after { opacity: 1; }
 
 /* ── Main content ───────────────────────────────────────────────────────── */
 .main {
@@ -402,7 +446,7 @@ header {
     <div class="sidebar-section">
       <div class="section-label">Bulb</div>
       <div class="field">
-        <label>IP Address</label>
+        <label>IP Address <span class="tip" data-tip="Local IP of your TP-Link Kasa smart bulb. Find it in the Kasa app under device settings.">?</span></label>
         <input type="text" id="bulb-ip" placeholder="192.168.x.x" />
       </div>
       <button class="btn" id="test-btn" style="width:100%;justify-content:center">Test Connection</button>
@@ -411,33 +455,33 @@ header {
 
     <div class="sidebar-section">
       <div class="section-label">Flash</div>
-      <div class="field"><label>Duration (s)</label><input type="number" id="flash_duration" value="12" min="1" step="1" /></div>
-      <div class="field"><label>Interval (s)</label><input type="number" id="flash_interval" value="0.45" min="0.05" step="0.05" /></div>
-      <div class="field"><label>Quiet window (s)</label><input type="number" id="flash_quiet_window" value="1.5" min="0" step="0.1" /></div>
-      <div class="field"><label>Transition (ms)</label><input type="number" id="flash_transition_ms" value="120" min="0" step="10" /></div>
+      <div class="field"><label>Duration (s) <span class="tip" data-tip="How long the bulb flashes after a goal is scored. e.g. 12 = 12 seconds of flashing.">?</span></label><input type="number" id="flash_duration" value="12" min="1" step="1" /></div>
+      <div class="field"><label>Interval (s) <span class="tip" data-tip="How fast the bulb alternates between the two team colors. Lower = faster strobe. e.g. 0.45 = one flash every 450ms.">?</span></label><input type="number" id="flash_interval" value="0.45" min="0.05" step="0.05" /></div>
+      <div class="field"><label>Quiet window (s) <span class="tip" data-tip="After flashing ends, waits this long for any extra goals before restoring the bulb. Prevents the bulb restoring mid-burst on quick goals.">?</span></label><input type="number" id="flash_quiet_window" value="1.5" min="0" step="0.1" /></div>
+      <div class="field"><label>Transition (ms) <span class="tip" data-tip="How long the bulb takes to fade between colors during a flash. 0 = instant snap. 120 = smooth 120ms crossfade between team colors.">?</span></label><input type="number" id="flash_transition_ms" value="120" min="0" step="10" /></div>
     </div>
 
     <div class="sidebar-section">
       <div class="section-label">Polling</div>
-      <div class="field"><label>Live (s)</label><input type="number" id="poll_live_seconds" value="1.0" min="0.1" step="0.1" /></div>
-      <div class="field"><label>Critical (s)</label><input type="number" id="poll_critical_seconds" value="0.75" min="0.1" step="0.05" /></div>
-      <div class="field"><label>Pregame (s)</label><input type="number" id="poll_pregame_seconds" value="10" min="1" step="1" /></div>
-      <div class="field"><label>Error (s)</label><input type="number" id="poll_error_seconds" value="5" min="1" step="1" /></div>
+      <div class="field"><label>Live (s) <span class="tip" data-tip="How often the NHL API is checked for score updates during a live game. Lower = faster goal detection, but more requests.">?</span></label><input type="number" id="poll_live_seconds" value="1.0" min="0.1" step="0.1" /></div>
+      <div class="field"><label>Critical (s) <span class="tip" data-tip="Poll interval used in the final minute of a period (CRIT state). Set lower than Live for tighter coverage of late goals.">?</span></label><input type="number" id="poll_critical_seconds" value="0.75" min="0.1" step="0.05" /></div>
+      <div class="field"><label>Pregame (s) <span class="tip" data-tip="How often the API is checked before the game starts. Higher is fine here — the game hasn't started yet.">?</span></label><input type="number" id="poll_pregame_seconds" value="10" min="1" step="1" /></div>
+      <div class="field"><label>Error (s) <span class="tip" data-tip="How long to wait before retrying after a failed API request. Prevents hammering the API on network issues.">?</span></label><input type="number" id="poll_error_seconds" value="5" min="1" step="1" /></div>
     </div>
 
     <div class="sidebar-section">
       <div class="section-label">Network</div>
-      <div class="field"><label>Request timeout (s)</label><input type="number" id="request_timeout" value="10" min="1" step="1" /></div>
-      <div class="field"><label>Max retries</label><input type="number" id="max_retries" value="4" min="0" step="1" /></div>
-      <div class="field"><label>Backoff base (s)</label><input type="number" id="backoff_base" value="1.0" min="0.1" step="0.1" /></div>
-      <div class="field"><label>Backoff max (s)</label><input type="number" id="backoff_max" value="30.0" min="1" step="1" /></div>
+      <div class="field"><label>Request timeout (s) <span class="tip" data-tip="Max seconds to wait for a response from the NHL API before treating it as a failed request.">?</span></label><input type="number" id="request_timeout" value="10" min="1" step="1" /></div>
+      <div class="field"><label>Max retries <span class="tip" data-tip="How many times to retry a failed NHL API request before giving up.">?</span></label><input type="number" id="max_retries" value="4" min="0" step="1" /></div>
+      <div class="field"><label>Backoff base (s) <span class="tip" data-tip="Starting wait time for exponential backoff between retries. Each retry doubles this up to Backoff Max.">?</span></label><input type="number" id="backoff_base" value="1.0" min="0.1" step="0.1" /></div>
+      <div class="field"><label>Backoff max (s) <span class="tip" data-tip="Maximum wait time between retries. Caps the exponential backoff so it doesn't wait too long.">?</span></label><input type="number" id="backoff_max" value="30.0" min="1" step="1" /></div>
     </div>
 
     <div class="sidebar-section">
       <div class="section-label">Timing</div>
-      <div class="field"><label>Pregame buffer (s)</label><input type="number" id="pregame_buffer_seconds" value="300" min="0" step="30" /></div>
-      <div class="field"><label>Restore transition (ms)</label><input type="number" id="restore_transition_ms" value="150" min="0" step="10" /></div>
-      <div class="field"><label>TV Delay (s)</label><input type="number" id="goal_delay_seconds" value="35" min="0" step="1" /></div>
+      <div class="field"><label>Pregame buffer (s) <span class="tip" data-tip="How many seconds before puck drop the script wakes up and starts polling. Default 300 = 5 minutes early.">?</span></label><input type="number" id="pregame_buffer_seconds" value="300" min="0" step="30" /></div>
+      <div class="field"><label>Restore transition (ms) <span class="tip" data-tip="How long the bulb takes to fade back to your original color after flashing ends. 0 = instant snap back.">?</span></label><input type="number" id="restore_transition_ms" value="150" min="0" step="10" /></div>
+      <div class="field"><label>TV Delay (s) <span class="tip" data-tip="Delays the flash by this many seconds after a goal is detected. Set this to match how far behind your TV stream is vs. live. e.g. 35 for most streaming services.">?</span></label><input type="number" id="goal_delay_seconds" value="35" min="0" step="1" /></div>
     </div>
 
   </aside>
@@ -504,9 +548,45 @@ header {
 "use strict";
 
 // ── State ────────────────────────────────────────────────────────────────────
-let _es = null;           // active EventSource
-let _statusTimer = null;  // setInterval for status polling
-let _teamColors = {};     // { ABBREV: { primary:[h,s,v], secondary:[h,s,v] } }
+let _es = null;
+let _statusTimer = null;
+let _teamColors = {};
+
+// Full team names keyed by abbreviation
+const TEAM_NAMES = {
+  "ANA": "Anaheim Ducks",
+  "BOS": "Boston Bruins",
+  "BUF": "Buffalo Sabres",
+  "CGY": "Calgary Flames",
+  "CAR": "Carolina Hurricanes",
+  "CHI": "Chicago Blackhawks",
+  "COL": "Colorado Avalanche",
+  "CBJ": "Columbus Blue Jackets",
+  "DAL": "Dallas Stars",
+  "DET": "Detroit Red Wings",
+  "EDM": "Edmonton Oilers",
+  "FLA": "Florida Panthers",
+  "LAK": "Los Angeles Kings",
+  "MIN": "Minnesota Wild",
+  "MTL": "Montreal Canadiens",
+  "NSH": "Nashville Predators",
+  "NJD": "New Jersey Devils",
+  "NYI": "New York Islanders",
+  "NYR": "New York Rangers",
+  "OTT": "Ottawa Senators",
+  "PHI": "Philadelphia Flyers",
+  "PIT": "Pittsburgh Penguins",
+  "SJS": "San Jose Sharks",
+  "SEA": "Seattle Kraken",
+  "STL": "St. Louis Blues",
+  "TBL": "Tampa Bay Lightning",
+  "TOR": "Toronto Maple Leafs",
+  "UTA": "Utah Hockey Club",
+  "VAN": "Vancouver Canucks",
+  "VGK": "Vegas Golden Knights",
+  "WSH": "Washington Capitals",
+  "WPG": "Winnipeg Jets",
+};
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -578,12 +658,11 @@ async function loadTeamColors() {
     const r = await fetch("/api/team-colors");
     if (!r.ok) return;
     _teamColors = await r.json();
-    // Populate simulate team dropdown
     const abbrevs = Object.keys(_teamColors).sort();
     abbrevs.forEach(abbrev => {
       const opt = document.createElement("option");
       opt.value = abbrev;
-      opt.textContent = abbrev;
+      opt.textContent = TEAM_NAMES[abbrev] ? `${TEAM_NAMES[abbrev]} (${abbrev})` : abbrev;
       simTeam.appendChild(opt);
     });
   } catch (_) {}
@@ -704,9 +783,10 @@ simBtn.addEventListener("click", async () => {
   if (!ip)   { simResult.className = "simulate-result err"; simResult.textContent = "✗ Enter a bulb IP first"; return; }
   if (!team) { simResult.className = "simulate-result err"; simResult.textContent = "✗ Pick a team first"; return; }
 
+  const teamLabel = TEAM_NAMES[team] || team;
   simBtn.disabled = true;
   simResult.className = "simulate-result";
-  simResult.textContent = `Firing ${team} goal flash…`;
+  simResult.textContent = `Firing ${teamLabel} goal flash…`;
 
   try {
     const params = new URLSearchParams({
@@ -720,7 +800,7 @@ simBtn.addEventListener("click", async () => {
     const d = await r.json();
     if (d.ok) {
       simResult.className = "simulate-result ok";
-      simResult.textContent = `✓ ${team} flash complete`;
+      simResult.textContent = `✓ ${teamLabel} flash complete`;
     } else {
       simResult.className = "simulate-result err";
       simResult.textContent = `✗ ${d.error || "Failed"}`;

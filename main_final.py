@@ -81,6 +81,11 @@ TEAM_COLORS: dict[str, TeamPalette] = {
 
 DEFAULT_PALETTE = TeamPalette((0, 100, 100), (0, 0, 100))
 
+# Minimum brightness used when a team color has value=0 (black).
+# Keeps the bulb ON so transitions stay sharp — avoids the hardware fade
+# that occurs whenever turn_off() is called.
+_BLACK_VALUE = 1
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -499,6 +504,7 @@ class BulbController:
         async with self._io_lock:
             try:
                 await self._ensure_connected()
+                await self._bulb.turn_on()
 
                 loop = asyncio.get_running_loop()
                 end = loop.time() + self._config.flash_duration
@@ -510,15 +516,17 @@ class BulbController:
                     else:
                         h, s, v = palette.secondary
 
-                    if v == 0:
-                        await self._bulb.turn_off()
+                    # Never call turn_off() during a flash — the bulb firmware
+                    # always applies a hardware fade on power-off regardless of
+                    # transition settings, making black look sluggish.
+                    # Instead drive the bulb to near-black (value=1) so all
+                    # transitions stay within set_hsv and respect flash_transition_ms.
+                    effective_v = _BLACK_VALUE if v == 0 else _clamp(v, 1, 100)
+
+                    if snapshot.supports_color:
+                        await self._set_hsv_safe(h, s, effective_v, self._config.flash_transition_ms)
                     else:
-                        if snapshot.supports_color:
-                            await self._bulb.turn_on()
-                            await self._set_hsv_safe(h, s, _clamp(v, 1, 100), self._config.flash_transition_ms)
-                        else:
-                            await self._bulb.turn_on()
-                            await self._set_brightness_safe(_clamp(v, 1, 100), self._config.flash_transition_ms)
+                        await self._set_brightness_safe(effective_v, self._config.flash_transition_ms)
 
                     use_primary = not use_primary
                     await asyncio.sleep(self._config.flash_interval)
@@ -738,7 +746,7 @@ async def run() -> None:
         log.info("Fetching today's games...")
         games = await nhl_client.fetch_todays_games()
 
-        # ── GAME_IDS env var support (set by server.py GUI) ────────────────────
+        # ── GAME_IDS env var support (set by server.py GUI) ──────────────────
         game_ids_env = os.getenv("GAME_IDS", "").strip()
         if game_ids_env:
             id_set = set(game_ids_env.split(","))
