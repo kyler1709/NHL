@@ -465,32 +465,29 @@ class BulbController:
         async with self._io_lock:
             try:
                 await self._ensure_connected()
+                await self._bulb.turn_on()
 
                 loop = asyncio.get_running_loop()
                 end = loop.time() + self._config.flash_duration
+                next_switch = loop.time()  # absolute timestamp for next command
                 use_primary = True
 
                 while loop.time() < end:
-                    if use_primary:
-                        h, s, v = palette.primary
-                    else:
-                        h, s, v = palette.secondary
+                    h, s, v = palette.primary if use_primary else palette.secondary
 
                     if v == 0:
-                        # Color is black — turn off bulb
-                        await self._bulb.turn_off()
+                        await self._turn_off_instant()
+                    elif snapshot.supports_color:
+                        await self._set_hsv_safe(h, s, _clamp(v, 1, 100),
+                                                 self._config.flash_transition_ms)
                     else:
-                        if snapshot.supports_color:
-                            await self._bulb.turn_on()
-                            await self._set_hsv_safe(h, s, _clamp(v, 1, 100),
-                                                     self._config.flash_transition_ms)
-                        else:
-                            await self._bulb.turn_on()
-                            await self._set_brightness_safe(_clamp(v, 1, 100),
-                                                            self._config.flash_transition_ms)
+                        await self._set_brightness_safe(_clamp(v, 1, 100),
+                                                        self._config.flash_transition_ms)
 
                     use_primary = not use_primary
-                    await asyncio.sleep(self._config.flash_interval)
+                    next_switch += self._config.flash_interval
+                    sleep_time = max(0.0, next_switch - loop.time())
+                    await asyncio.sleep(sleep_time)
 
                 await self._bulb.turn_on()
             except Exception:
@@ -615,7 +612,7 @@ async def monitor_game(
         a, h = status.away_score, status.home_score
 
         if last_status is None:
-            log.info("[%s] Game started: %s %d \u2013 %s %d", tag,
+            log.info("[%s] Game started: %s %d – %s %d", tag,
                      status.away_abbrev, a, status.home_abbrev, h)
         else:
             prev_a = last_status.away_score or 0
@@ -624,7 +621,7 @@ async def monitor_game(
             home_delta = max(h - prev_h, 0)
 
             if away_delta:
-                log.info("[%s] GOAL x%d \u2014 %s! Score: %s %d \u2013 %s %d",
+                log.info("[%s] GOAL x%d — %s! Score: %s %d – %s %d",
                          tag, away_delta, status.away_abbrev,
                          status.away_abbrev, a, status.home_abbrev, h)
                 for _ in range(away_delta):
@@ -632,7 +629,7 @@ async def monitor_game(
                     await goal_queue.put(GoalEvent(game.game_id, status.away_abbrev))
 
             if home_delta:
-                log.info("[%s] GOAL x%d \u2014 %s! Score: %s %d \u2013 %s %d",
+                log.info("[%s] GOAL x%d — %s! Score: %s %d – %s %d",
                          tag, home_delta, status.home_abbrev,
                          status.away_abbrev, a, status.home_abbrev, h)
                 for _ in range(home_delta):
@@ -642,7 +639,7 @@ async def monitor_game(
         last_status = status
 
         if status.game_state in FINAL_STATES:
-            log.info("[%s] Final: %s %d \u2013 %s %d", tag,
+            log.info("[%s] Final: %s %d – %s %d", tag,
                      status.away_abbrev, a, status.home_abbrev, h)
             return
 
@@ -670,11 +667,11 @@ def select_games(games: list[GameInfo]) -> list[GameInfo]:
         try:
             indexes = sorted({int(part.strip()) for part in raw.split(",") if part.strip()})
         except ValueError:
-            print("  Invalid input \u2014 enter numbers like 1,3 or 'all'.")
+            print("  Invalid input — enter numbers like 1,3 or 'all'.")
             continue
         selected = [games[i - 1] for i in indexes if 1 <= i <= len(games)]
         if not selected or len(selected) != len(indexes):
-            print("  One or more selections are out of range \u2014 try again.")
+            print("  One or more selections are out of range — try again.")
             continue
         return selected
 
