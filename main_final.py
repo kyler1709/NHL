@@ -455,7 +455,7 @@ class BulbController:
             log.info(
                 "Captured bulb state: on=%s brightness=%s hue=%s sat=%s color=%s color_temp=%s",
                 snap.is_on, snap.brightness, snap.hue, snap.saturation,
-                snap.supports_color, snap.supports_color_temp,
+                snap.supports_color, snap.color_temp,
             )
             return snap
 
@@ -468,7 +468,10 @@ class BulbController:
                     await self._bulb.turn_off()
                     return
 
-                if snap.supports_color_temp and snap.color_mode == "color_temp" and snap.color_temp:
+                # Prioritise color_temp if it was captured, regardless of the
+                # supports_color_temp flag (which can be False on some bulb
+                # firmware versions even when set_color_temp works fine).
+                if snap.color_temp:
                     await self._set_color_temp_safe(
                         snap.color_temp, snap.brightness, self._config.restore_transition_ms,
                     )
@@ -508,10 +511,8 @@ class BulbController:
                         h, s, v = palette.secondary
 
                     if v == 0:
-                        # Color is black, turn off bulb
                         await self._bulb.turn_off()
                     else:
-                        # Set to the team color using clamped HSV value
                         if snapshot.supports_color:
                             await self._bulb.turn_on()
                             await self._set_hsv_safe(h, s, _clamp(v, 1, 100), self._config.flash_transition_ms)
@@ -661,7 +662,6 @@ async def monitor_game(
                     status.away_abbrev, a, status.home_abbrev, h,
                 )
                 for _ in range(away_delta):
-                    # Delay goal trigger by configured offset (for TV stream delay)
                     await _interruptible_sleep(config.goal_delay_seconds, shutdown)
                     await goal_queue.put(GoalEvent(game.game_id, status.away_abbrev))
 
@@ -672,7 +672,6 @@ async def monitor_game(
                     status.away_abbrev, a, status.home_abbrev, h,
                 )
                 for _ in range(home_delta):
-                    # Delay goal trigger by configured offset (for TV stream delay)
                     await _interruptible_sleep(config.goal_delay_seconds, shutdown)
                     await goal_queue.put(GoalEvent(game.game_id, status.home_abbrev))
 
@@ -739,7 +738,7 @@ async def run() -> None:
         log.info("Fetching today's games...")
         games = await nhl_client.fetch_todays_games()
 
-        # ── GAME_IDS env var support (set by server.py GUI) ──────────────────
+        # ── GAME_IDS env var support (set by server.py GUI) ────────────────────
         game_ids_env = os.getenv("GAME_IDS", "").strip()
         if game_ids_env:
             id_set = set(game_ids_env.split(","))
