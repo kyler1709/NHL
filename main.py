@@ -469,7 +469,6 @@ class BulbController:
 
                 loop = asyncio.get_running_loop()
                 end = loop.time() + self._config.flash_duration
-                next_switch = loop.time()  # absolute timestamp for next command
                 use_primary = True
 
                 while loop.time() < end:
@@ -485,7 +484,9 @@ class BulbController:
                                                         self._config.flash_transition_ms)
 
                     use_primary = not use_primary
-                    next_switch += self._config.flash_interval
+                    # Reset from now so each colour always gets a full flash_interval
+                    # regardless of how long the bulb command took
+                    next_switch = loop.time() + self._config.flash_interval
                     sleep_time = max(0.0, next_switch - loop.time())
                     await asyncio.sleep(sleep_time)
 
