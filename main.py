@@ -12,7 +12,6 @@ import logging
 import os
 import random
 import signal
-import traceback
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -93,7 +92,6 @@ class AppConfig:
     poll_pregame_seconds: float
     poll_error_seconds: float
     restore_transition_ms: int
-    flash_transition_ms: int
     goal_delay_seconds: int
 
 
@@ -165,7 +163,6 @@ def build_config() -> AppConfig:
         poll_pregame_seconds=float(os.getenv("POLL_PREGAME_SECONDS", "10")),
         poll_error_seconds=float(os.getenv("POLL_ERROR_SECONDS", "5")),
         restore_transition_ms=int(os.getenv("RESTORE_TRANSITION_MS", "150")),
-        flash_transition_ms=int(os.getenv("FLASH_TRANSITION_MS", "50")),
         goal_delay_seconds=int(os.getenv("GOAL_DELAY_SECONDS", "35")),
     )
 
@@ -378,6 +375,19 @@ class BulbController:
         self._connected = False
         await self._ensure_connected()
 
+    async def _set_hsv_instant(self, hue: int, saturation: int, value: int) -> None:
+        """Send HSV with transition=0 — no firmware interpolation, no colour bleed."""
+        try:
+            await self._light.set_hsv(hue, saturation, value, transition=0)
+        except TypeError:
+            await self._light.set_hsv(hue, saturation, value)
+
+    async def _set_brightness_instant(self, brightness: int) -> None:
+        try:
+            await self._light.set_brightness(brightness, transition=0)
+        except TypeError:
+            await self._light.set_brightness(brightness)
+
     async def _set_hsv_safe(self, hue: int, saturation: int, value: int, transition_ms: int) -> None:
         try:
             await self._light.set_hsv(hue, saturation, value, transition=transition_ms)
@@ -400,8 +410,6 @@ class BulbController:
                 await self._light.set_color_temp(color_temp)
 
     async def _turn_off_instant(self) -> None:
-        """Turn off the bulb with transition=0. Firmware on this bulb
-        honours transition=0 on turn_off, giving a true instant cut."""
         try:
             await self._bulb.turn_off(transition=0)
         except TypeError:
@@ -464,28 +472,43 @@ class BulbController:
 
         async with self._io_lock:
             try:
+                # Connect once before the loop — never reconnect mid-flash
+                # as that triggers bulb.update() which is slow and steals time.
                 await self._ensure_connected()
+                # Mark as stale so the NEXT operation after flashing does a
+                # fresh update, but the flash loop itself will not.
+                self._last_updated = datetime.min.replace(tzinfo=timezone.utc)
 
                 loop = asyncio.get_running_loop()
                 end = loop.time() + self._config.flash_duration
                 use_primary = True
 
+                # Deadline-based timing: track when the next colour switch
+                # should happen so network latency doesn't accumulate.
+                next_tick = loop.time() + self._config.flash_interval
+
                 while loop.time() < end:
                     h, s, v = palette.primary if use_primary else palette.secondary
 
                     if v == 0:
-                        # True black: turn the bulb fully off instantly.
-                        # Firmware respects transition=0 on turn_off on this device.
+                        # True black — instant off, no transition
                         await self._turn_off_instant()
                     elif snapshot.supports_color:
-                        await self._set_hsv_safe(h, s, _clamp(v, 1, 100),
-                                                 self._config.flash_transition_ms)
+                        # transition=0 is critical: any non-zero value causes
+                        # the firmware to interpolate through intermediate hues
+                        # (e.g. navy -> ice-blue passes through white).
+                        await self._set_hsv_instant(h, s, _clamp(v, 1, 100))
                     else:
-                        await self._set_brightness_safe(_clamp(v, 1, 100),
-                                                        self._config.flash_transition_ms)
+                        await self._set_brightness_instant(_clamp(v, 1, 100))
 
                     use_primary = not use_primary
-                    await asyncio.sleep(self._config.flash_interval)
+
+                    # Sleep only the remaining time until next_tick, absorbing
+                    # whatever latency the set_hsv call consumed.
+                    remaining = next_tick - loop.time()
+                    if remaining > 0:
+                        await asyncio.sleep(remaining)
+                    next_tick += self._config.flash_interval
 
             except Exception:
                 log.exception("Error during flash for team %s — reconnecting.", team_abbrev)
