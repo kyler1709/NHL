@@ -462,12 +462,6 @@ class BulbController:
     async def flash_team(self, team_abbrev: str, snapshot: BulbSnapshot) -> None:
         palette = TEAM_COLORS.get(team_abbrev, DEFAULT_PALETTE)
 
-        # How long each color holds, minus the transition fade time so the
-        # next command fires only after the bulb has fully rendered.
-        # We clamp to 0 so a very large transition_ms never goes negative.
-        transition_s = self._config.flash_transition_ms / 1000.0
-        hold_s = max(0.0, self._config.flash_interval - transition_s)
-
         async with self._io_lock:
             try:
                 await self._ensure_connected()
@@ -481,18 +475,22 @@ class BulbController:
                     h, s, v = palette.primary if use_primary else palette.secondary
 
                     if v == 0:
+                        # Turn off with instant transition for clean black state
                         await self._turn_off_instant()
-                    elif snapshot.supports_color:
-                        await self._set_hsv_safe(h, s, _clamp(v, 1, 100),
-                                                 self._config.flash_transition_ms)
                     else:
-                        await self._set_brightness_safe(_clamp(v, 1, 100),
-                                                        self._config.flash_transition_ms)
+                        # Ensure bulb is on before color change to prevent white flashes/bleed
+                        await self._bulb.turn_on()
+                        if snapshot.supports_color:
+                            await self._set_hsv_safe(h, s, _clamp(v, 1, 100),
+                                                     self._config.flash_transition_ms)
+                        else:
+                            await self._set_brightness_safe(_clamp(v, 1, 100),
+                                                            self._config.flash_transition_ms)
 
                     use_primary = not use_primary
-                    # Sleep for the hold time only — transition already accounts
-                    # for the fade portion of the interval.
-                    await asyncio.sleep(hold_s)
+                    # Sleep for full interval; transition completes during this time
+                    # ensuring clean color separation and even timing
+                    await asyncio.sleep(self._config.flash_interval)
 
                 await self._bulb.turn_on()
             except Exception:
