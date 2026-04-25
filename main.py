@@ -472,10 +472,8 @@ class BulbController:
                 use_primary = True
 
                 while loop.time() < end:
-                    # Record when this colour slot starts — deadline is one full interval later
-                    slot_deadline = loop.time() + self._config.flash_interval
-
                     h, s, v = palette.primary if use_primary else palette.secondary
+
                     if v == 0:
                         await self._turn_off_instant()
                     elif snapshot.supports_color:
@@ -486,13 +484,7 @@ class BulbController:
                                                         self._config.flash_transition_ms)
 
                     use_primary = not use_primary
-
-                    # Sleep the remainder of this colour's slot so each colour
-                    # is visible for exactly flash_interval seconds regardless
-                    # of how long the bulb command took to ACK.
-                    remaining = slot_deadline - loop.time()
-                    if remaining > 0:
-                        await asyncio.sleep(remaining)
+                    await asyncio.sleep(self._config.flash_interval)
 
                 await self._bulb.turn_on()
             except Exception:
