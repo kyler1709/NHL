@@ -307,7 +307,7 @@ header {
   background: #0e0e0c;
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
   font-size: 11.5px;
-  height: 260px;
+  height: 420px;
   overflow-y: auto;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
@@ -361,7 +361,6 @@ header {
   <header>
     <span class="logo">NHL <span>Goal Light</span></span>
     <div class="header-right">
-      <a href="/test.html" class="btn btn-primary" style="padding: 4px 8px; font-size: 11px;">Test</a>
       <span class="status-pill" id="status-pill">Idle</span>
       <button class="theme-btn" id="theme-btn" title="Toggle theme">🌙</button>
     </div>
@@ -530,15 +529,6 @@ async function loadTeamColors() {
   try {
     const r = await fetch("/api/team-colors");
     if (r.ok) _teamColors = await r.json();
-    // Populate test team select
-    const select = $("test-team");
-    select.innerHTML = '<option value="">Select team...</option>';
-    Object.keys(_teamColors).sort().forEach(abbrev => {
-      const opt = document.createElement("option");
-      opt.value = abbrev;
-      opt.textContent = abbrev;
-      select.appendChild(opt);
-    });
   } catch (_) {}
 }
 
@@ -758,6 +748,7 @@ stopBtn.addEventListener("click", async () => {
   });
 
   await fetchGames();
+  await loadTeamColors();
   await pollStatus();
   _statusTimer = setInterval(pollStatus, 3000);
 })();

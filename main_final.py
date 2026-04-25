@@ -511,13 +511,13 @@ class BulbController:
                         # Color is black, turn off bulb
                         await self._bulb.turn_off()
                     else:
-                        # Set to the team color using configured brightness
+                        # Set to the team color using clamped HSV value
                         if snapshot.supports_color:
                             await self._bulb.turn_on()
-                            await self._set_hsv_safe(h, s, self._config.bulb_brightness, self._config.flash_transition_ms)
+                            await self._set_hsv_safe(h, s, _clamp(v, 1, 100), self._config.flash_transition_ms)
                         else:
                             await self._bulb.turn_on()
-                            await self._set_brightness_safe(self._config.bulb_brightness, self._config.flash_transition_ms)
+                            await self._set_brightness_safe(_clamp(v, 1, 100), self._config.flash_transition_ms)
 
                     use_primary = not use_primary
                     await asyncio.sleep(self._config.flash_interval)
