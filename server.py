@@ -314,48 +314,56 @@ def api_team_colors():
 @app.route("/api/simulate-goal")
 def api_simulate_goal():
     """Simulate a goal for testing: flash the bulb with the team's colors."""
-    ip = request.args.get("ip", "").strip()
-    team = request.args.get("team", "").strip().upper()
-    flash_duration = float(request.args.get("flash_duration", "12"))
-    flash_interval = float(request.args.get("flash_interval", "0.45"))
-    flash_transition_ms = int(request.args.get("flash_transition_ms", "120"))
+    try:
+        ip = request.args.get("ip", "").strip()
+        team = request.args.get("team", "").strip().upper()
+        flash_duration = float(request.args.get("flash_duration", "12"))
+        flash_interval = float(request.args.get("flash_interval", "0.45"))
+        flash_transition_ms = int(request.args.get("flash_transition_ms", "120"))
 
-    if not ip:
-        return jsonify({"ok": False, "error": "No IP provided"})
-    if not team:
-        return jsonify({"ok": False, "error": "No team provided"})
+        if not ip:
+            return jsonify({"ok": False, "error": "No IP provided"})
+        if not team:
+            return jsonify({"ok": False, "error": "No team provided"})
 
-    if team not in main_final.TEAM_COLORS:
-        return jsonify({"ok": False, "error": f"Unknown team: {team}"})
-    
-    # Create config with provided settings
-    config = main_final.AppConfig(
-        bulb_ip=ip,
-        request_timeout=10.0,
-        max_retries=4,
-        backoff_base=1.0,
-        backoff_max=30.0,
-        flash_duration=flash_duration,
-        flash_interval=flash_interval,
-        flash_quiet_window=1.5,
-        pregame_buffer_seconds=300,
-        poll_live_seconds=1.0,
-        poll_critical_seconds=0.75,
-        poll_pregame_seconds=10.0,
-        poll_error_seconds=5.0,
-        restore_transition_ms=150,
-        flash_transition_ms=flash_transition_ms,
-    )
+        if team not in main_final.TEAM_COLORS:
+            return jsonify({"ok": False, "error": f"Unknown team: {team}"})
+        
+        # Create config with provided settings
+        config = main_final.AppConfig(
+            bulb_ip=ip,
+            request_timeout=10.0,
+            max_retries=4,
+            backoff_base=1.0,
+            backoff_max=30.0,
+            flash_duration=flash_duration,
+            flash_interval=flash_interval,
+            flash_quiet_window=1.5,
+            pregame_buffer_seconds=300,
+            poll_live_seconds=1.0,
+            poll_critical_seconds=0.75,
+            poll_pregame_seconds=10.0,
+            poll_error_seconds=5.0,
+            restore_transition_ms=150,
+            flash_transition_ms=flash_transition_ms,
+        )
 
-    async def _simulate():
-        bulb = main_final.BulbController(config)
-        snapshot = await bulb.capture_state()
-        await bulb.flash_team(team, snapshot)
-        await main_final._safe_restore(bulb, snapshot)
-        await bulb.shutdown()
+        async def _simulate():
+            bulb = main_final.BulbController(config)
+            snapshot = await bulb.capture_state()
+            await bulb.flash_team(team, snapshot)
+            await main_final._safe_restore(bulb, snapshot)
+            await bulb.shutdown()
 
-    asyncio.run(_simulate())
-    return jsonify({"ok": True, "error": None})
+        def _run_sync():
+            asyncio.run(_simulate())
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(_run_sync).result(timeout=60)
+
+        return jsonify({"ok": True, "error": None})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
 
 
 # ── entry point ───────────────────────────────────────────────────────────────
