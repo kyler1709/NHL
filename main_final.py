@@ -496,7 +496,6 @@ class BulbController:
         async with self._io_lock:
             try:
                 await self._ensure_connected()
-                await self._bulb.turn_on()
 
                 loop = asyncio.get_running_loop()
                 end = loop.time() + self._config.flash_duration
@@ -504,17 +503,21 @@ class BulbController:
 
                 while loop.time() < end:
                     if use_primary:
-                        # Flash on with primary color at full brightness
+                        h, s, v = palette.primary
+                    else:
+                        h, s, v = palette.secondary
+
+                    if v == 0:
+                        # Color is black, turn off bulb
+                        await self._bulb.turn_off()
+                    else:
+                        # Set to the team color using configured brightness
                         if snapshot.supports_color:
-                            h, s, _ = palette.primary
                             await self._bulb.turn_on()
-                            await self._set_hsv_safe(h, s, 100, 0)
+                            await self._set_hsv_safe(h, s, self._config.bulb_brightness, self._config.flash_transition_ms)
                         else:
                             await self._bulb.turn_on()
-                            await self._set_brightness_safe(100, 0)
-                    else:
-                        # Flash off (strobe)
-                        await self._bulb.turn_off()
+                            await self._set_brightness_safe(self._config.bulb_brightness, self._config.flash_transition_ms)
 
                     use_primary = not use_primary
                     await asyncio.sleep(self._config.flash_interval)
