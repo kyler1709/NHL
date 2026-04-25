@@ -39,14 +39,14 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MAIN_SCRIPT = os.path.join(HERE, "main_final.py")
+MAIN_SCRIPT = os.path.join(HERE, "main.py")
 NHL_API_BASE = "https://api-web.nhle.com/v1"
 EASTERN_TZ = ZoneInfo("America/New_York")
 
 app = Flask(__name__, static_folder=HERE)
 
-# Import main_final for access to classes and constants
-import main_final
+# Import main for access to classes and constants
+import main
 
 # ── subprocess state ──────────────────────────────────────────────────────────
 _proc: subprocess.Popen | None = None
@@ -108,12 +108,7 @@ def _proc_is_alive() -> bool:
 
 @app.route("/")
 def index():
-    return send_from_directory(HERE, "nhl-goal-light-gui.html")
-
-
-@app.route("/test.html")
-def test_page():
-    return send_from_directory(HERE, "test.html")
+    return send_from_directory(HERE, "web.html")
 
 
 @app.route("/api/games")
@@ -302,7 +297,7 @@ def api_test_bulb():
 def api_team_colors():
     """Expose TEAM_COLORS as HSV tuples for the frontend swatches."""
     out = {}
-    for abbrev, palette in main_final.TEAM_COLORS.items():
+    for abbrev, palette in main.TEAM_COLORS.items():
         out[abbrev] = {
             "primary":   list(palette.primary),
             "secondary": list(palette.secondary),
@@ -325,11 +320,11 @@ def api_simulate_goal():
         if not team:
             return jsonify({"ok": False, "error": "No team provided"})
 
-        if team not in main_final.TEAM_COLORS:
+        if team not in main.TEAM_COLORS:
             return jsonify({"ok": False, "error": f"Unknown team: {team}"})
 
         # Create config with provided settings
-        config = main_final.AppConfig(
+        config = main.AppConfig(
             bulb_ip=ip,
             request_timeout=10.0,
             max_retries=4,
@@ -349,10 +344,10 @@ def api_simulate_goal():
         )
 
         async def _simulate():
-            bulb = main_final.BulbController(config)
+            bulb = main.BulbController(config)
             snapshot = await bulb.capture_state()
             await bulb.flash_team(team, snapshot)
-            await main_final._safe_restore(bulb, snapshot)
+            await main._safe_restore(bulb, snapshot)
             await bulb.shutdown()
 
         def _run_sync():

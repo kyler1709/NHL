@@ -818,7 +818,7 @@ startBtn.addEventListener("click", async () => {
   const game_ids   = checked.map(cb => Number(cb.value));
   const per_game_delays = game_ids.map(id => gameDelays[id] ?? parseFloat($("goal_delay_seconds").value) ?? 35);
   const body = {
-    bulb_ips: ips, game_ids, per_game_delays,
+    bulb_ip: ips[0], game_ids, per_game_delays,
     flash_duration:        parseFloat($("flash_duration").value),
     flash_interval:        parseFloat($("flash_interval").value),
     flash_quiet_window:    parseFloat($("flash_quiet_window").value),

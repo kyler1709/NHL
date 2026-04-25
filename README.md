@@ -44,7 +44,7 @@ cd NHL-BULB
 pip install flask python-kasa requests
 
 # 3. Run the server
-python nhl_goal_light_server.py
+python server.py
 
 # 4. Open the GUI
 # Visit http://localhost:5000 in your browser (or your LAN IP for mobile)
