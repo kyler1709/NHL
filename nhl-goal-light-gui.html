@@ -208,7 +208,7 @@ header {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 14px; border-bottom: 1px solid var(--border);
   transition: background .1s;
-  flex-wrap: nowrap;   /* never wrap — items shrink instead */
+  flex-wrap: nowrap;
   min-width: 0;
 }
 .game-row:last-child { border-bottom: none; }
@@ -218,12 +218,12 @@ header {
 .game-matchup {
   flex: 1;
   font-size: 12.5px; font-weight: 500; cursor: pointer;
-  min-width: 0;          /* allow text to shrink */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.game-time    { font-size: 11px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+.game-time { font-size: 11px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
 
 .game-badge {
   font-size: 10px; font-weight: 700; padding: 1px 6px;
@@ -311,7 +311,7 @@ header {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-/* ── Mobile ── */
+/* ── Mobile — drawer + layout (all screens ≤ 680px) ── */
 @media (max-width: 680px) {
   :root { --header-h: 50px; }
 
@@ -341,18 +341,22 @@ header {
   .panel-header { flex-wrap: wrap; gap: 6px; }
   .panel-header-actions { width: 100%; justify-content: flex-end; }
 
-  /* hide time + swatches on mobile to keep everything on one row */
-  .game-time    { display: none; }
-  .team-swatches { display: none; }
-
-  /* tighten row padding on mobile */
+  /* tighten row on all mobile */
   .game-row { padding: 8px 10px; gap: 6px; }
 
+  /* swatches hidden on all mobile — not enough room */
+  .team-swatches { display: none; }
+
   .controls .btn { flex: 1; justify-content: center; }
-
   .log-wrap { height: 260px; }
-
   #global-tip { max-width: 220px !important; }
+}
+
+/* ── Portrait-only phones (≤ 430px wide) ──
+   Hide the start time on the narrowest screens so
+   checkbox + matchup + badge + delay all fit on one row. */
+@media (max-width: 430px) {
+  .game-time { display: none; }
 }
 </style>
 </head>
