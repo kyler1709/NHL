@@ -375,18 +375,39 @@ class BulbController:
         self._connected = False
         await self._ensure_connected()
 
-    async def _set_hsv_instant(self, hue: int, saturation: int, value: int) -> None:
-        """Send HSV with transition=0 — no firmware interpolation, no colour bleed."""
-        try:
-            await self._light.set_hsv(hue, saturation, value, transition=0)
-        except TypeError:
-            await self._light.set_hsv(hue, saturation, value)
+    async def _set_light_state_raw(self, state: dict) -> None:
+        """
+        Send a raw set_light_state command directly to the bulb.
 
-    async def _set_brightness_instant(self, brightness: int) -> None:
-        try:
-            await self._light.set_brightness(brightness, transition=0)
-        except TypeError:
-            await self._light.set_brightness(brightness)
+        Using ignore_default:1 + transition:0 bypasses the bulb's firmware-level
+        smooth_transition_on setting entirely. The high-level set_hsv() call only
+        passes transition to the API layer; the firmware can still override it
+        with its stored default. This raw path tells the firmware to ignore that
+        default and apply the change instantly.
+        """
+        await self._bulb.protocol.query(
+            {"smartlife.iot.smartbulb.lightingservice": {"set_light_state": state}}
+        )
+
+    async def _flash_hsv(self, hue: int, saturation: int, value: int) -> None:
+        """Instant HSV set that bypasses firmware smooth-transition defaults."""
+        await self._set_light_state_raw({
+            "on_off": 1,
+            "hue": hue,
+            "saturation": saturation,
+            "brightness": value,
+            "color_temp": 0,
+            "transition_period": 0,
+            "ignore_default": 1,
+        })
+
+    async def _flash_off(self) -> None:
+        """Instant off that bypasses firmware smooth-transition defaults."""
+        await self._set_light_state_raw({
+            "on_off": 0,
+            "transition_period": 0,
+            "ignore_default": 1,
+        })
 
     async def _set_hsv_safe(self, hue: int, saturation: int, value: int, transition_ms: int) -> None:
         try:
@@ -408,12 +429,6 @@ class BulbController:
                 await self._light.set_color_temp(color_temp, brightness=brightness)
             except TypeError:
                 await self._light.set_color_temp(color_temp)
-
-    async def _turn_off_instant(self) -> None:
-        try:
-            await self._bulb.turn_off(transition=0)
-        except TypeError:
-            await self._bulb.turn_off()
 
     async def capture_state(self) -> BulbSnapshot:
         async with self._io_lock:
@@ -472,39 +487,44 @@ class BulbController:
 
         async with self._io_lock:
             try:
-                # Connect once before the loop — never reconnect mid-flash
-                # as that triggers bulb.update() which is slow and steals time.
+                # Connect once before the loop. Mark stale immediately so the
+                # staleness check does NOT fire mid-flash (which would trigger
+                # a slow bulb.update() and steal time from one colour).
                 await self._ensure_connected()
-                # Mark as stale so the NEXT operation after flashing does a
-                # fresh update, but the flash loop itself will not.
                 self._last_updated = datetime.min.replace(tzinfo=timezone.utc)
 
                 loop = asyncio.get_running_loop()
                 end = loop.time() + self._config.flash_duration
                 use_primary = True
 
-                # Deadline-based timing: track when the next colour switch
-                # should happen so network latency doesn't accumulate.
+                # Deadline-based timing: absorb per-command network latency so
+                # both colours are displayed for exactly flash_interval seconds.
                 next_tick = loop.time() + self._config.flash_interval
 
                 while loop.time() < end:
                     h, s, v = palette.primary if use_primary else palette.secondary
 
                     if v == 0:
-                        # True black — instant off, no transition
-                        await self._turn_off_instant()
+                        # True black — instant off, bypassing firmware defaults
+                        await self._flash_off()
                     elif snapshot.supports_color:
-                        # transition=0 is critical: any non-zero value causes
-                        # the firmware to interpolate through intermediate hues
-                        # (e.g. navy -> ice-blue passes through white).
-                        await self._set_hsv_instant(h, s, _clamp(v, 1, 100))
+                        # Raw set_light_state with ignore_default:1 + transition_period:0
+                        # bypasses the bulb's stored smooth_transition_on setting.
+                        # High-level set_hsv(transition=0) does NOT do this — the
+                        # firmware still applies its default ramp on top, which
+                        # causes colour interpolation (e.g. navy→white→ice-blue).
+                        await self._flash_hsv(h, s, _clamp(v, 1, 100))
                     else:
-                        await self._set_brightness_instant(_clamp(v, 1, 100))
+                        # Non-colour bulb fallback: raw brightness set
+                        await self._set_light_state_raw({
+                            "on_off": 1,
+                            "brightness": _clamp(v, 1, 100),
+                            "transition_period": 0,
+                            "ignore_default": 1,
+                        })
 
                     use_primary = not use_primary
 
-                    # Sleep only the remaining time until next_tick, absorbing
-                    # whatever latency the set_hsv call consumed.
                     remaining = next_tick - loop.time()
                     if remaining > 0:
                         await asyncio.sleep(remaining)
