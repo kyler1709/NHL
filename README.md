@@ -70,12 +70,6 @@ python nhl_goal_light_server.py
 - **Live Log** — SSE-streamed output; goals highlighted in red, errors in orange
 - **Simulate Goal** — pick any team and fire a test flash instantly
 
-### Mobile
-
-Tap the **☰** hamburger in the top-left to open the settings drawer. The layout stacks to a single column below 680 px.
-
----
-
 ## Configuration Reference
 
 | Parameter | Default | Description |
@@ -95,26 +89,6 @@ Tap the **☰** hamburger in the top-left to open the settings drawer. The layou
 | `pregame_buffer_seconds` | 300 s | Wake-up lead time before puck drop |
 | `restore_transition_ms` | 150 ms | Fade time back to original colour |
 | `goal_delay_seconds` | 35 s | Global TV delay (overridable per game) |
-
----
-
-## Multiple Bulbs
-
-Enter one IP address per line in the **Bulbs** section of the sidebar:
-
-```
-192.168.1.101
-192.168.1.102
-192.168.1.103
-```
-
-All bulbs are tested and flashed in parallel. The status indicator shows `N bulbs connected` or `N/M bulbs failed` if some are unreachable.
-
----
-
-## TV Delay
-
-Most streaming services run 30–60 s behind the live feed. Set the **Default TV Delay** in the sidebar, or override it per game in the game list. The flash fires exactly that many seconds after the goal is detected by the API.
 
 ---
 
