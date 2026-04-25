@@ -88,7 +88,7 @@ header {
 .sidebar {
   background: var(--surface);
   border-right: 1px solid var(--border);
-  overflow-x: hidden;   /* fix: tooltips were causing horizontal scroll */
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 12px 0 24px;
 }
@@ -146,51 +146,30 @@ header {
 /* ── Bulb status box ── */
 .bulb-status {
   margin-top: 6px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--surface2);
-  font-size: 11px;
-  color: var(--muted);
-  min-height: 28px;
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface2);
+  font-size: 11px; color: var(--muted); min-height: 28px;
 }
 .bulb-status .dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--muted);
-  flex-shrink: 0;
-  transition: background .2s;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted); flex-shrink: 0; transition: background .2s;
 }
-.bulb-status.connected   { border-color: #2d6633; color: var(--green); }
+.bulb-status.connected    { border-color: #2d6633; color: var(--green); }
 .bulb-status.connected .dot { background: var(--green); }
 .bulb-status.disconnected { border-color: #6b2020; color: var(--red); }
 .bulb-status.disconnected .dot { background: var(--red); }
-.bulb-status.testing { border-color: var(--border); color: var(--muted); }
 
 /* ── Tooltip ── */
+/* The .tip circle — NO ::after pseudo-element; tooltips are rendered via JS floating div */
 .tip {
   display: inline-flex; align-items: center; justify-content: center;
   width: 13px; height: 13px; border-radius: 50%;
   background: var(--surface2); border: 1px solid var(--border);
   color: var(--muted); font-size: 9px; font-weight: 700;
-  cursor: default; position: relative; flex-shrink: 0;
+  cursor: default; flex-shrink: 0;
+  /* no position:relative needed — tooltip is a body-level fixed div */
 }
-.tip::after {
-  content: attr(data-tip);
-  position: fixed;         /* fixed avoids contributing to sidebar scroll width */
-  background: #111; color: #e8e6e0;
-  border: 1px solid var(--border); border-radius: 4px;
-  padding: 5px 8px; font-size: 11px; font-weight: 400;
-  white-space: pre-wrap; width: 180px; z-index: 9999;
-  pointer-events: none; opacity: 0;
-  transition: opacity .15s; line-height: 1.45;
-  /* positioned via JS on hover */
-  top: 0; left: 0;
-}
-.tip:hover::after { opacity: 1; }
 
 /* ── Main ── */
 .main {
@@ -246,7 +225,6 @@ header {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 14px; flex-wrap: wrap;
 }
-
 .simulate-result {
   font-size: 11px; min-height: 16px; padding: 0 14px 8px;
 }
@@ -346,6 +324,7 @@ header {
 
   <main class="main">
 
+    <!-- Today's Games -->
     <div class="panel">
       <div class="panel-header">
         <span>Today's Games</span>
@@ -360,19 +339,7 @@ header {
       </ul>
     </div>
 
-    <div class="panel">
-      <div class="panel-header"><span>Simulate Goal</span></div>
-      <div class="simulate-body">
-        <div class="field" style="margin:0;flex:1;min-width:100px">
-          <select id="sim-team">
-            <option value="">— Pick a team —</option>
-          </select>
-        </div>
-        <button class="btn btn-primary" id="sim-btn">⚡ Fire</button>
-      </div>
-      <div class="simulate-result" id="sim-result"></div>
-    </div>
-
+    <!-- Live Log (moved above Simulate Goal) -->
     <div class="panel" style="flex:1;display:flex;flex-direction:column;">
       <div class="panel-header">
         <span>Live Log</span>
@@ -390,6 +357,20 @@ header {
         <button class="btn btn-primary" id="start-btn">▶ Start Monitoring</button>
         <button class="btn btn-danger" id="stop-btn" disabled>■ Stop</button>
       </div>
+    </div>
+
+    <!-- Simulate Goal (moved below Live Log) -->
+    <div class="panel">
+      <div class="panel-header"><span>Simulate Goal</span></div>
+      <div class="simulate-body">
+        <div class="field" style="margin:0;flex:1;min-width:100px">
+          <select id="sim-team">
+            <option value="">— Pick a team —</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="sim-btn">⚡ Fire</button>
+      </div>
+      <div class="simulate-result" id="sim-result"></div>
     </div>
 
   </main>
@@ -457,19 +438,7 @@ const simBtn       = $("sim-btn");
 const simResult    = $("sim-result");
 const simTeam      = $("sim-team");
 
-// ── Tooltip positioning (uses fixed so it never scrolls the sidebar) ──────────
-document.querySelectorAll(".tip").forEach(tip => {
-  tip.addEventListener("mouseenter", () => {
-    const rect = tip.getBoundingClientRect();
-    const pseudo = tip;
-    pseudo.style.setProperty("--tip-top", `${rect.top + rect.height / 2}px`);
-    pseudo.style.setProperty("--tip-left", `${rect.right + 6}px`);
-  });
-});
-
-// Override the ::after position via CSS custom props per element
-// (We use a small JS approach instead: hide the ::after and use a real div)
-// Re-implement tooltips as real floating divs to avoid overflow-x issues.
+// ── Tooltip — single global floating div, NO CSS ::after ─────────────────────
 const tooltip = document.createElement("div");
 tooltip.id = "global-tip";
 Object.assign(tooltip.style, {
@@ -485,16 +454,14 @@ Object.assign(tooltip.style, {
 document.body.appendChild(tooltip);
 
 document.querySelectorAll(".tip").forEach(tip => {
-  tip.addEventListener("mouseenter", e => {
+  tip.addEventListener("mouseenter", () => {
     tooltip.textContent = tip.dataset.tip || "";
-    const rect = tip.getBoundingClientRect();
-    tooltip.style.top  = (rect.top + rect.height / 2 - 10) + "px";
-    tooltip.style.left = (rect.right + 8) + "px";
+    const r = tip.getBoundingClientRect();
+    tooltip.style.top  = (r.top + r.height / 2 - 10) + "px";
+    tooltip.style.left = (r.right + 8) + "px";
     tooltip.style.opacity = "1";
   });
-  tip.addEventListener("mouseleave", () => {
-    tooltip.style.opacity = "0";
-  });
+  tip.addEventListener("mouseleave", () => { tooltip.style.opacity = "0"; });
 });
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -504,7 +471,8 @@ themeBtn.addEventListener("click", () => {
   html.setAttribute("data-theme", dark ? "light" : "dark");
   themeBtn.textContent = dark ? "☀️" : "🌙";
   tooltip.style.background = dark ? "#fff" : "#111";
-  tooltip.style.color = dark ? "#1a1916" : "#e8e6e0";
+  tooltip.style.color       = dark ? "#1a1916" : "#e8e6e0";
+  tooltip.style.borderColor = dark ? "#d0cfc9" : "#2e2d2a";
 });
 
 // ── Log helpers ───────────────────────────────────────────────────────────────
@@ -526,7 +494,7 @@ function classifyLine(line) {
 
 clearLogBtn.addEventListener("click", () => { logWrap.innerHTML = ""; });
 
-// ── Bulb status helpers ───────────────────────────────────────────────────────
+// ── Bulb status ───────────────────────────────────────────────────────────────
 function setBulbStatus(state, text) {
   bulbStatus.className = "bulb-status " + state;
   bulbStatusTx.textContent = text;
@@ -556,8 +524,7 @@ async function loadTeamColors() {
     const r = await fetch("/api/team-colors");
     if (!r.ok) return;
     _teamColors = await r.json();
-    const abbrevs = Object.keys(_teamColors).sort();
-    abbrevs.forEach(abbrev => {
+    Object.keys(_teamColors).sort().forEach(abbrev => {
       const opt = document.createElement("option");
       opt.value = abbrev;
       opt.textContent = TEAM_NAMES[abbrev] ? `${TEAM_NAMES[abbrev]} (${abbrev})` : abbrev;
@@ -603,7 +570,6 @@ function renderGames(games) {
 
     const swatches = document.createElement("div");
     swatches.className = "team-swatches";
-
     const awayColors = _teamColors[g.away_abbrev];
     const homeColors = _teamColors[g.home_abbrev];
     if (awayColors) {
@@ -647,20 +613,14 @@ refreshBtn.addEventListener("click", fetchGames);
 // ── Bulb test ─────────────────────────────────────────────────────────────────
 testBtn.addEventListener("click", async () => {
   const ip = $("bulb-ip").value.trim();
-  if (!ip) {
-    setBulbStatus("disconnected", "Enter an IP first");
-    return;
-  }
+  if (!ip) { setBulbStatus("disconnected", "Enter an IP first"); return; }
   testBtn.disabled = true;
   setBulbStatus("testing", "Testing…");
   try {
     const r = await fetch(`/api/test-bulb?ip=${encodeURIComponent(ip)}`);
     const d = await r.json();
-    if (d.ok) {
-      setBulbStatus("connected", d.model ? `Connected — ${d.model}` : "Connected");
-    } else {
-      setBulbStatus("disconnected", d.error || "Connection failed");
-    }
+    if (d.ok) setBulbStatus("connected", d.model ? `Connected — ${d.model}` : "Connected");
+    else      setBulbStatus("disconnected", d.error || "Connection failed");
   } catch (e) {
     setBulbStatus("disconnected", e.message);
   } finally {
@@ -668,7 +628,6 @@ testBtn.addEventListener("click", async () => {
   }
 });
 
-// Reset status when IP changes
 $("bulb-ip").addEventListener("input", () => {
   localStorage.setItem("nhl_bulb_ip", $("bulb-ip").value);
   setBulbStatus("", "Not tested");
@@ -695,13 +654,8 @@ simBtn.addEventListener("click", async () => {
     });
     const r = await fetch(`/api/simulate-goal?${params}`);
     const d = await r.json();
-    if (d.ok) {
-      simResult.className = "simulate-result ok";
-      simResult.textContent = `✓ ${teamLabel} flash complete`;
-    } else {
-      simResult.className = "simulate-result err";
-      simResult.textContent = `✗ ${d.error || "Failed"}`;
-    }
+    if (d.ok) { simResult.className = "simulate-result ok";  simResult.textContent = `✓ ${teamLabel} flash complete`; }
+    else      { simResult.className = "simulate-result err"; simResult.textContent = `✗ ${d.error || "Failed"}`; }
   } catch (e) {
     simResult.className = "simulate-result err";
     simResult.textContent = `✗ ${e.message}`;
@@ -801,9 +755,8 @@ stopBtn.addEventListener("click", async () => {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async () => {
-  const savedBulbIp = localStorage.getItem("nhl_bulb_ip");
-  if (savedBulbIp) $("bulb-ip").value = savedBulbIp;
-
+  const savedIp = localStorage.getItem("nhl_bulb_ip");
+  if (savedIp) $("bulb-ip").value = savedIp;
   await fetchGames();
   await loadTeamColors();
   await pollStatus();
