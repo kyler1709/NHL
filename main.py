@@ -165,7 +165,7 @@ def build_config() -> AppConfig:
         poll_pregame_seconds=float(os.getenv("POLL_PREGAME_SECONDS", "10")),
         poll_error_seconds=float(os.getenv("POLL_ERROR_SECONDS", "5")),
         restore_transition_ms=int(os.getenv("RESTORE_TRANSITION_MS", "150")),
-        flash_transition_ms=int(os.getenv("FLASH_TRANSITION_MS", "120")),
+        flash_transition_ms=int(os.getenv("FLASH_TRANSITION_MS", "50")),
         goal_delay_seconds=int(os.getenv("GOAL_DELAY_SECONDS", "35")),
     )
 
@@ -465,7 +465,6 @@ class BulbController:
         async with self._io_lock:
             try:
                 await self._ensure_connected()
-                await self._bulb.turn_on()
 
                 loop = asyncio.get_running_loop()
                 end = loop.time() + self._config.flash_duration
@@ -488,7 +487,6 @@ class BulbController:
                     use_primary = not use_primary
                     await asyncio.sleep(self._config.flash_interval)
 
-                await self._bulb.turn_on()
             except Exception:
                 log.exception("Error during flash for team %s — reconnecting.", team_abbrev)
                 try:
