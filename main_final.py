@@ -3,11 +3,6 @@ NHL Goal Light Controller
 ━━━━━━━━━━━━━━━━━━━━━━━━
 Monitors NHL games in real-time and flashes a TP-Link Kasa smart bulb
 with team colors whenever a goal is scored.
-
-Configuration is done entirely via environment variables — see build_config().
-
-Dependencies:
-pip install aiohttp python-kasa
 """
 
 from __future__ import annotations
@@ -72,7 +67,8 @@ TEAM_COLORS: dict[str, TeamPalette] = {
     "STL": TeamPalette((216, 100, 100), (45, 100, 100)),
     "TBL": TeamPalette((216, 100, 100), (0, 0, 100)),
     "TOR": TeamPalette((216, 100, 100), (0, 0, 100)),
-    "UTA": TeamPalette((0, 0, 0),       (45, 100, 100)),
+    # Utah Hockey Club: navy blue + gold
+    "UTA": TeamPalette((220, 100, 72),  (45, 100, 100)),
     "VAN": TeamPalette((216, 100, 100), (120, 100, 70)),
     "VGK": TeamPalette((45, 100, 100),  (0, 0, 20)),
     "WSH": TeamPalette((0, 100, 100),   (216, 100, 100)),
@@ -80,11 +76,6 @@ TEAM_COLORS: dict[str, TeamPalette] = {
 }
 
 DEFAULT_PALETTE = TeamPalette((0, 100, 100), (0, 0, 100))
-
-# Minimum brightness used when a team color has value=0 (black).
-# Keeps the bulb ON so transitions stay sharp — avoids the hardware fade
-# that occurs whenever turn_off() is called.
-_BLACK_VALUE = 1
 
 
 @dataclass(frozen=True)
@@ -272,7 +263,6 @@ class NhlApiClient:
 
     async def __aenter__(self) -> "NhlApiClient":
         import aiohttp
-
         self._session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=self._config.request_timeout)
         )
@@ -285,7 +275,6 @@ class NhlApiClient:
 
     async def _get_json(self, path: str) -> dict:
         import aiohttp
-
         if self._session is None:
             raise RuntimeError("NhlApiClient must be used as an async context manager.")
 
@@ -297,17 +286,13 @@ class NhlApiClient:
                 async with self._session.get(url) as resp:
                     if resp.status == 404:
                         return {}
-
                     if 400 <= resp.status < 500 and resp.status not in RETRYABLE_STATUS:
                         resp.raise_for_status()
-
                     if resp.status in RETRYABLE_STATUS:
                         retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
                         raise _RetryableError(resp.status, retry_after)
-
                     resp.raise_for_status()
                     return await resp.json()
-
             except asyncio.CancelledError:
                 raise
             except _RetryableError as exc:
@@ -315,18 +300,14 @@ class NhlApiClient:
                 wait = exc.retry_after if exc.retry_after is not None else _backoff(
                     attempt, self._config.backoff_base, self._config.backoff_max
                 )
-                log.warning(
-                    "NHL API %s on %s (attempt %d/%d) — retrying in %.1fs.",
-                    exc.status, url, attempt + 1, self._config.max_retries, wait,
-                )
+                log.warning("NHL API %s on %s (attempt %d/%d) — retrying in %.1fs.",
+                            exc.status, url, attempt + 1, self._config.max_retries, wait)
                 await asyncio.sleep(wait)
             except aiohttp.ClientError as exc:
                 last_exc = exc
                 wait = _backoff(attempt, self._config.backoff_base, self._config.backoff_max)
-                log.warning(
-                    "Network error on %s (attempt %d/%d): %s — retrying in %.1fs.",
-                    url, attempt + 1, self._config.max_retries, exc, wait,
-                )
+                log.warning("Network error on %s (attempt %d/%d): %s — retrying in %.1fs.",
+                            url, attempt + 1, self._config.max_retries, exc, wait)
                 await asyncio.sleep(wait)
 
         log.error("Giving up on %s after %d attempts.", url, self._config.max_retries)
@@ -336,23 +317,19 @@ class NhlApiClient:
         today = datetime.now(EASTERN_TZ).date().isoformat()
         payload = await self._get_json(f"/schedule/{today}")
         games: list[GameInfo] = []
-
         for day in payload.get("gameWeek", []):
             if day.get("date") != today:
                 continue
             for g in day.get("games", []):
-                games.append(
-                    GameInfo(
-                        game_id=g["id"],
-                        away_abbrev=g["awayTeam"]["abbrev"],
-                        home_abbrev=g["homeTeam"]["abbrev"],
-                        away_name=_display_team_name(g["awayTeam"]),
-                        home_name=_display_team_name(g["homeTeam"]),
-                        start_time_utc=_parse_utc(g["startTimeUTC"]),
-                        game_state=g.get("gameState", ""),
-                    )
-                )
-
+                games.append(GameInfo(
+                    game_id=g["id"],
+                    away_abbrev=g["awayTeam"]["abbrev"],
+                    home_abbrev=g["homeTeam"]["abbrev"],
+                    away_name=_display_team_name(g["awayTeam"]),
+                    home_name=_display_team_name(g["homeTeam"]),
+                    start_time_utc=_parse_utc(g["startTimeUTC"]),
+                    game_state=g.get("gameState", ""),
+                ))
         games.sort(key=lambda game: game.start_time_utc)
         return games
 
@@ -360,7 +337,6 @@ class NhlApiClient:
         payload = await self._get_json(f"/gamecenter/{game_id}/boxscore")
         if not payload:
             return None
-
         away = payload.get("awayTeam", {})
         home = payload.get("homeTeam", {})
         return GameStatus(
@@ -388,15 +364,13 @@ class BulbController:
             or self._bulb is None
             or (now - self._last_updated) > STALE_THRESHOLD
         )
-
         if needs_refresh:
             self._bulb = IotBulb(self._config.bulb_ip)
             await self._bulb.update()
             self._light = self._bulb.modules.get("Light")
             if self._light is None:
                 raise RuntimeError(
-                    f"Bulb at {self._config.bulb_ip} has no Light module. "
-                    "Confirm it is a compatible Kasa bulb."
+                    f"Bulb at {self._config.bulb_ip} has no Light module."
                 )
             self._connected = True
             self._last_updated = now
@@ -419,77 +393,65 @@ class BulbController:
 
     async def _set_color_temp_safe(self, color_temp: int, brightness: int, transition_ms: int) -> None:
         try:
-            await self._light.set_color_temp(
-                color_temp, brightness=brightness, transition=transition_ms,
-            )
+            await self._light.set_color_temp(color_temp, brightness=brightness, transition=transition_ms)
         except TypeError:
             try:
                 await self._light.set_color_temp(color_temp, brightness=brightness)
             except TypeError:
                 await self._light.set_color_temp(color_temp)
 
+    async def _turn_off_instant(self) -> None:
+        """Turn off the bulb with transition=0. Firmware on this bulb
+        honours transition=0 on turn_off, giving a true instant cut."""
+        try:
+            await self._bulb.turn_off(transition=0)
+        except TypeError:
+            await self._bulb.turn_off()
+
     async def capture_state(self) -> BulbSnapshot:
         async with self._io_lock:
             await self._ensure_connected()
-
             light = self._light
             hsv = getattr(light, "hsv", None)
             hue, saturation, value = _extract_hsv(hsv)
             color_temp = getattr(light, "color_temp", None) or None
             color_mode = getattr(light, "color_mode", None)
             brightness = getattr(light, "brightness", value if value > 0 else 100)
-
             supports_color = hasattr(light, "set_hsv")
             supports_color_temp = bool(
                 hasattr(light, "set_color_temp")
                 and hasattr(self._bulb, "is_variable_color_temp")
                 and self._bulb.is_variable_color_temp
             )
-
             snap = BulbSnapshot(
                 is_on=bool(self._bulb.is_on),
                 brightness=_clamp(brightness, 1, 100),
-                hue=hue,
-                saturation=saturation,
+                hue=hue, saturation=saturation,
                 color_temp=color_temp,
                 color_mode=str(color_mode) if color_mode is not None else None,
                 supports_color=supports_color,
                 supports_color_temp=supports_color_temp,
             )
-
-            log.info(
-                "Captured bulb state: on=%s brightness=%s hue=%s sat=%s color=%s color_temp=%s",
-                snap.is_on, snap.brightness, snap.hue, snap.saturation,
-                snap.supports_color, snap.color_temp,
-            )
+            log.info("Captured bulb state: on=%s brightness=%s hue=%s sat=%s color=%s color_temp=%s",
+                     snap.is_on, snap.brightness, snap.hue, snap.saturation,
+                     snap.supports_color, snap.color_temp)
             return snap
 
     async def restore_state(self, snap: BulbSnapshot) -> None:
         async with self._io_lock:
             try:
                 await self._ensure_connected()
-
                 if not snap.is_on:
                     await self._bulb.turn_off()
                     return
-
-                # Prioritise color_temp if it was captured, regardless of the
-                # supports_color_temp flag (which can be False on some bulb
-                # firmware versions even when set_color_temp works fine).
                 if snap.color_temp:
-                    await self._set_color_temp_safe(
-                        snap.color_temp, snap.brightness, self._config.restore_transition_ms,
-                    )
+                    await self._set_color_temp_safe(snap.color_temp, snap.brightness,
+                                                    self._config.restore_transition_ms)
                 elif snap.supports_color:
-                    await self._set_hsv_safe(
-                        snap.hue, snap.saturation, snap.brightness,
-                        self._config.restore_transition_ms,
-                    )
+                    await self._set_hsv_safe(snap.hue, snap.saturation, snap.brightness,
+                                             self._config.restore_transition_ms)
                 else:
-                    await self._set_brightness_safe(
-                        snap.brightness, self._config.restore_transition_ms,
-                    )
-
+                    await self._set_brightness_safe(snap.brightness, self._config.restore_transition_ms)
                 await self._bulb.turn_on()
             except Exception:
                 log.exception("Failed to restore bulb state — attempting reconnect.")
@@ -511,22 +473,18 @@ class BulbController:
                 use_primary = True
 
                 while loop.time() < end:
-                    if use_primary:
-                        h, s, v = palette.primary
-                    else:
-                        h, s, v = palette.secondary
+                    h, s, v = palette.primary if use_primary else palette.secondary
 
-                    # Never call turn_off() during a flash — the bulb firmware
-                    # always applies a hardware fade on power-off regardless of
-                    # transition settings, making black look sluggish.
-                    # Instead drive the bulb to near-black (value=1) so all
-                    # transitions stay within set_hsv and respect flash_transition_ms.
-                    effective_v = _BLACK_VALUE if v == 0 else _clamp(v, 1, 100)
-
-                    if snapshot.supports_color:
-                        await self._set_hsv_safe(h, s, effective_v, self._config.flash_transition_ms)
+                    if v == 0:
+                        # True black: turn the bulb fully off instantly.
+                        # Firmware respects transition=0 on turn_off on this device.
+                        await self._turn_off_instant()
+                    elif snapshot.supports_color:
+                        await self._set_hsv_safe(h, s, _clamp(v, 1, 100),
+                                                 self._config.flash_transition_ms)
                     else:
-                        await self._set_brightness_safe(effective_v, self._config.flash_transition_ms)
+                        await self._set_brightness_safe(_clamp(v, 1, 100),
+                                                        self._config.flash_transition_ms)
 
                     use_primary = not use_primary
                     await asyncio.sleep(self._config.flash_interval)
@@ -569,7 +527,6 @@ async def flash_worker(
                 queue.task_done()
                 await _safe_restore(bulb, snapshot)
                 return
-
             log.info("Flash: game=%s team=%s", event.game_id, event.scoring_team)
             await bulb.flash_team(event.scoring_team, snapshot)
             queue.task_done()
@@ -590,8 +547,7 @@ async def flash_worker(
             while True:
                 try:
                     straggler = await asyncio.wait_for(
-                        queue.get(), timeout=config.flash_quiet_window,
-                    )
+                        queue.get(), timeout=config.flash_quiet_window)
                     if straggler is None:
                         queue.task_done()
                         await _safe_restore(bulb, snapshot)
@@ -656,7 +612,8 @@ async def monitor_game(
         a, h = status.away_score, status.home_score
 
         if last_status is None:
-            log.info("[%s] Game started: %s %d – %s %d", tag, status.away_abbrev, a, status.home_abbrev, h)
+            log.info("[%s] Game started: %s %d – %s %d", tag,
+                     status.away_abbrev, a, status.home_abbrev, h)
         else:
             prev_a = last_status.away_score or 0
             prev_h = last_status.home_score or 0
@@ -664,21 +621,17 @@ async def monitor_game(
             home_delta = max(h - prev_h, 0)
 
             if away_delta:
-                log.info(
-                    "[%s] GOAL x%d — %s! Score: %s %d – %s %d",
-                    tag, away_delta, status.away_abbrev,
-                    status.away_abbrev, a, status.home_abbrev, h,
-                )
+                log.info("[%s] GOAL x%d — %s! Score: %s %d – %s %d",
+                         tag, away_delta, status.away_abbrev,
+                         status.away_abbrev, a, status.home_abbrev, h)
                 for _ in range(away_delta):
                     await _interruptible_sleep(config.goal_delay_seconds, shutdown)
                     await goal_queue.put(GoalEvent(game.game_id, status.away_abbrev))
 
             if home_delta:
-                log.info(
-                    "[%s] GOAL x%d — %s! Score: %s %d – %s %d",
-                    tag, home_delta, status.home_abbrev,
-                    status.away_abbrev, a, status.home_abbrev, h,
-                )
+                log.info("[%s] GOAL x%d — %s! Score: %s %d – %s %d",
+                         tag, home_delta, status.home_abbrev,
+                         status.away_abbrev, a, status.home_abbrev, h)
                 for _ in range(home_delta):
                     await _interruptible_sleep(config.goal_delay_seconds, shutdown)
                     await goal_queue.put(GoalEvent(game.game_id, status.home_abbrev))
@@ -686,7 +639,8 @@ async def monitor_game(
         last_status = status
 
         if status.game_state in FINAL_STATES:
-            log.info("[%s] Final: %s %d – %s %d", tag, status.away_abbrev, a, status.home_abbrev, h)
+            log.info("[%s] Final: %s %d – %s %d", tag,
+                     status.away_abbrev, a, status.home_abbrev, h)
             return
 
         await _interruptible_sleep(_poll_interval(status.game_state, config), shutdown)
@@ -706,24 +660,19 @@ def select_games(games: list[GameInfo]) -> list[GameInfo]:
 
     while True:
         raw = input("\nTrack which games? (e.g. 1,3 | 'all' | 0 to exit): ").strip().lower()
-
         if raw in {"0", "q", "quit", "exit"}:
             return []
-
         if raw == "all":
             return list(games)
-
         try:
             indexes = sorted({int(part.strip()) for part in raw.split(",") if part.strip()})
         except ValueError:
             print("  Invalid input — enter numbers like 1,3 or 'all'.")
             continue
-
         selected = [games[i - 1] for i in indexes if 1 <= i <= len(games)]
         if not selected or len(selected) != len(indexes):
             print("  One or more selections are out of range — try again.")
             continue
-
         return selected
 
 
@@ -746,7 +695,6 @@ async def run() -> None:
         log.info("Fetching today's games...")
         games = await nhl_client.fetch_todays_games()
 
-        # ── GAME_IDS env var support (set by server.py GUI) ──────────────────
         game_ids_env = os.getenv("GAME_IDS", "").strip()
         if game_ids_env:
             id_set = set(game_ids_env.split(","))
@@ -760,7 +708,6 @@ async def run() -> None:
             if not selected:
                 print("No games selected. Exiting.")
                 return
-        # ─────────────────────────────────────────────────────────────────────
 
         log.info("Capturing bulb state...")
         bulb = BulbController(config)
@@ -783,12 +730,10 @@ async def run() -> None:
             await goal_queue.join()
         finally:
             shutdown.set()
-
             for task in monitor_tasks:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(*monitor_tasks, return_exceptions=True)
-
             await goal_queue.put(None)
             await worker_task
 
