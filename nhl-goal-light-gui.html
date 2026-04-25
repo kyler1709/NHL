@@ -163,6 +163,21 @@ header {
 }
 .field input:focus { border-color: var(--accent); }
 
+.field select {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.field select:focus { border-color: var(--accent); }
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -302,6 +317,23 @@ header {
   text-align: center;
 }
 
+/* ── Simulate panel ─────────────────────────────────────────────────────── */
+.simulate-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  flex-wrap: wrap;
+}
+
+.simulate-result {
+  font-size: 11px;
+  min-height: 16px;
+  padding: 0 14px 8px;
+}
+.simulate-result.ok  { color: var(--green); }
+.simulate-result.err { color: var(--red); }
+
 /* ── Log ────────────────────────────────────────────────────────────────── */
 .log-wrap {
   background: #0e0e0c;
@@ -349,8 +381,6 @@ header {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
-
-/* ── Favicon SVG ────────────────────────────────────────────────────────── */
 </style>
 </head>
 <body>
@@ -430,6 +460,22 @@ header {
       </ul>
     </div>
 
+    <!-- Simulate Goal panel -->
+    <div class="panel">
+      <div class="panel-header">
+        <span>Simulate Goal</span>
+      </div>
+      <div class="simulate-body">
+        <div class="field" style="margin:0;flex:1;min-width:100px">
+          <select id="sim-team">
+            <option value="">— Pick a team —</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="sim-btn">⚡ Fire</button>
+      </div>
+      <div class="simulate-result" id="sim-result"></div>
+    </div>
+
     <!-- Log panel -->
     <div class="panel" style="flex:1;display:flex;flex-direction:column;">
       <div class="panel-header">
@@ -477,6 +523,9 @@ const clearLogBtn  = $("clear-log-btn");
 const refreshBtn   = $("refresh-games-btn");
 const selectAll    = $("select-all-btn");
 const deselectAll  = $("deselect-all-btn");
+const simBtn       = $("sim-btn");
+const simResult    = $("sim-result");
+const simTeam      = $("sim-team");
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 themeBtn.addEventListener("click", () => {
@@ -507,7 +556,6 @@ clearLogBtn.addEventListener("click", () => { logWrap.innerHTML = ""; });
 
 // ── Team colors + swatch ─────────────────────────────────────────────────────
 function hsvToHex(h, s, v) {
-  // h: 0-360, s: 0-100, v: 0-100
   s /= 100; v /= 100;
   const f = n => {
     const k = (n + h / 60) % 6;
@@ -528,7 +576,16 @@ function makeSwatch(hsv) {
 async function loadTeamColors() {
   try {
     const r = await fetch("/api/team-colors");
-    if (r.ok) _teamColors = await r.json();
+    if (!r.ok) return;
+    _teamColors = await r.json();
+    // Populate simulate team dropdown
+    const abbrevs = Object.keys(_teamColors).sort();
+    abbrevs.forEach(abbrev => {
+      const opt = document.createElement("option");
+      opt.value = abbrev;
+      opt.textContent = abbrev;
+      simTeam.appendChild(opt);
+    });
   } catch (_) {}
 }
 
@@ -569,7 +626,6 @@ function renderGames(games) {
     badge.className = `game-badge ${badgeClass(g.game_state)}`;
     badge.textContent = g.game_state || "?";
 
-    // Swatches
     const swatches = document.createElement("div");
     swatches.className = "team-swatches";
 
@@ -641,6 +697,42 @@ testBtn.addEventListener("click", async () => {
   }
 });
 
+// ── Simulate Goal ─────────────────────────────────────────────────────────────
+simBtn.addEventListener("click", async () => {
+  const ip   = $("bulb-ip").value.trim();
+  const team = simTeam.value;
+  if (!ip)   { simResult.className = "simulate-result err"; simResult.textContent = "✗ Enter a bulb IP first"; return; }
+  if (!team) { simResult.className = "simulate-result err"; simResult.textContent = "✗ Pick a team first"; return; }
+
+  simBtn.disabled = true;
+  simResult.className = "simulate-result";
+  simResult.textContent = `Firing ${team} goal flash…`;
+
+  try {
+    const params = new URLSearchParams({
+      ip,
+      team,
+      flash_duration:      $("flash_duration").value,
+      flash_interval:      $("flash_interval").value,
+      flash_transition_ms: $("flash_transition_ms").value,
+    });
+    const r = await fetch(`/api/simulate-goal?${params}`);
+    const d = await r.json();
+    if (d.ok) {
+      simResult.className = "simulate-result ok";
+      simResult.textContent = `✓ ${team} flash complete`;
+    } else {
+      simResult.className = "simulate-result err";
+      simResult.textContent = `✗ ${d.error || "Failed"}`;
+    }
+  } catch (e) {
+    simResult.className = "simulate-result err";
+    simResult.textContent = `✗ ${e.message}`;
+  } finally {
+    simBtn.disabled = false;
+  }
+});
+
 // ── SSE ───────────────────────────────────────────────────────────────────────
 function openSSE() {
   if (_es) { _es.close(); _es = null; }
@@ -656,7 +748,6 @@ function openSSE() {
     appendLog(line, classifyLine(line));
   };
   _es.onerror = () => {
-    // Server gone or process exited; don't spam reconnects
     if (_es) { _es.close(); _es = null; }
   };
 }
@@ -736,13 +827,9 @@ stopBtn.addEventListener("click", async () => {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async () => {
-  // Restore bulb IP from localStorage
   const savedBulbIp = localStorage.getItem("nhl_bulb_ip");
-  if (savedBulbIp) {
-    $("bulb-ip").value = savedBulbIp;
-  }
-  
-  // Save bulb IP to localStorage on input change
+  if (savedBulbIp) $("bulb-ip").value = savedBulbIp;
+
   $("bulb-ip").addEventListener("input", () => {
     localStorage.setItem("nhl_bulb_ip", $("bulb-ip").value);
   });
