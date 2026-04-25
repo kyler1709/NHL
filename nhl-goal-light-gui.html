@@ -90,7 +90,6 @@ header {
 }
 .icon-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-/* hamburger — hidden on desktop */
 #menu-btn { display: none; }
 
 /* ── Sidebar ── */
@@ -209,19 +208,28 @@ header {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 14px; border-bottom: 1px solid var(--border);
   transition: background .1s;
+  flex-wrap: nowrap;   /* never wrap — items shrink instead */
+  min-width: 0;
 }
 .game-row:last-child { border-bottom: none; }
 .game-row:hover { background: var(--surface2); }
 .game-row input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; flex-shrink:0; width:15px; height:15px; }
 
-.game-matchup { flex: 1; font-size: 12.5px; font-weight: 500; cursor: pointer; }
-.game-time    { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.game-matchup {
+  flex: 1;
+  font-size: 12.5px; font-weight: 500; cursor: pointer;
+  min-width: 0;          /* allow text to shrink */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.game-time    { font-size: 11px; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
 
 .game-badge {
   font-size: 10px; font-weight: 700; padding: 1px 6px;
   border-radius: 3px; letter-spacing: .04em;
   background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
-  white-space: nowrap;
+  white-space: nowrap; flex-shrink: 0;
 }
 .game-badge.live  { background: #1a3a1e; border-color: #2d6633; color: var(--green); }
 .game-badge.final { background: var(--surface2); color: var(--muted); }
@@ -233,20 +241,20 @@ header {
   border: 1px solid rgba(255,255,255,.08);
 }
 
-/* per-game delay badge */
+/* per-game delay */
 .game-delay-wrap {
-  display: flex; align-items: center; gap: 4px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 3px; flex-shrink: 0;
 }
 .game-delay-wrap label { font-size: 10px; color: var(--muted); white-space: nowrap; }
 .game-delay-input {
-  width: 46px;
+  width: 42px;
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text);
   font-family: inherit;
   font-size: 11px;
-  padding: 2px 5px;
+  padding: 2px 4px;
   outline: none;
   transition: border-color .15s;
   text-align: center;
@@ -314,7 +322,6 @@ header {
     grid-template-rows: var(--header-h) 1fr;
   }
 
-  /* sidebar becomes a fixed left drawer */
   .sidebar {
     position: fixed;
     top: 0; left: 0;
@@ -334,16 +341,17 @@ header {
   .panel-header { flex-wrap: wrap; gap: 6px; }
   .panel-header-actions { width: 100%; justify-content: flex-end; }
 
-  /* game rows: two lines on very narrow */
-  .game-row { flex-wrap: wrap; row-gap: 4px; }
-  .game-matchup { min-width: 110px; }
-  .game-delay-wrap { order: 10; }
+  /* hide time + swatches on mobile to keep everything on one row */
+  .game-time    { display: none; }
+  .team-swatches { display: none; }
+
+  /* tighten row padding on mobile */
+  .game-row { padding: 8px 10px; gap: 6px; }
 
   .controls .btn { flex: 1; justify-content: center; }
 
   .log-wrap { height: 260px; }
 
-  /* tooltip: show below on mobile to avoid going off screen */
   #global-tip { max-width: 220px !important; }
 }
 </style>
@@ -367,7 +375,6 @@ header {
     </div>
   </header>
 
-  <!-- overlay for mobile drawer -->
   <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
   <aside class="sidebar" id="sidebar">
@@ -375,10 +382,7 @@ header {
     <div class="sidebar-section">
       <div class="section-label">Bulbs</div>
       <div class="field">
-        <label>
-          IP Addresses
-          <span class="tip" data-tip="One IP per line. All bulbs flash simultaneously on a goal. Find IPs in the Kasa app under device settings.">?</span>
-        </label>
+        <label>IP Addresses <span class="tip" data-tip="One IP per line. All bulbs flash simultaneously on a goal. Find IPs in the Kasa app under device settings.">?</span></label>
         <textarea id="bulb-ips" rows="3" placeholder="192.168.x.x&#10;192.168.x.y"></textarea>
       </div>
       <button class="btn" id="test-btn" style="width:100%;justify-content:center">Test Connection</button>
@@ -426,7 +430,6 @@ header {
 
   <main class="main">
 
-    <!-- Today's Games -->
     <div class="panel">
       <div class="panel-header">
         <span>Today's Games</span>
@@ -441,7 +444,6 @@ header {
       </ul>
     </div>
 
-    <!-- Live Log -->
     <div class="panel" style="flex:1;display:flex;flex-direction:column;">
       <div class="panel-header">
         <span>Live Log</span>
@@ -461,7 +463,6 @@ header {
       </div>
     </div>
 
-    <!-- Simulate Goal -->
     <div class="panel">
       <div class="panel-header"><span>Simulate Goal</span></div>
       <div class="simulate-body">
@@ -477,7 +478,6 @@ header {
 
 </div>
 
-<!-- Global tooltip div -->
 <div id="global-tip" style="position:fixed;z-index:9999;background:#111;color:#e8e6e0;border:1px solid #2e2d2a;border-radius:4px;padding:5px 8px;font-size:11px;line-height:1.45;max-width:200px;white-space:pre-wrap;pointer-events:none;opacity:0;transition:opacity .12s;top:0;left:0"></div>
 
 <script>
@@ -524,21 +524,19 @@ const simResult    = $("sim-result");
 const simTeam      = $("sim-team");
 const tooltip      = $("global-tip");
 
-// ── Mobile drawer ──────────────────────────────────────────────────────────────
+// ── Mobile drawer ──
 function openDrawer()  { sidebar.classList.add("open"); overlay.classList.add("open"); }
 function closeDrawer() { sidebar.classList.remove("open"); overlay.classList.remove("open"); }
 menuBtn.addEventListener("click", () => sidebar.classList.contains("open") ? closeDrawer() : openDrawer());
 overlay.addEventListener("click", closeDrawer);
 
-// ── Tooltip ──────────────────────────────────────────────────────────────────────
+// ── Tooltip ──
 function attachTooltip(el) {
   el.addEventListener("mouseenter", () => {
     tooltip.textContent = el.dataset.tip || "";
     const r = el.getBoundingClientRect();
-    const tipW = 200;
-    // prefer right; fall back to below on small screens
     const spaceRight = window.innerWidth - r.right;
-    if (spaceRight > tipW + 12) {
+    if (spaceRight > 212) {
       tooltip.style.top  = (r.top + r.height / 2 - 10) + "px";
       tooltip.style.left = (r.right + 8) + "px";
     } else {
@@ -551,7 +549,7 @@ function attachTooltip(el) {
 }
 document.querySelectorAll(".tip").forEach(attachTooltip);
 
-// ── Theme ─────────────────────────────────────────────────────────────────────
+// ── Theme ──
 themeBtn.addEventListener("click", () => {
   const html = document.documentElement;
   const dark = html.getAttribute("data-theme") === "dark";
@@ -559,7 +557,7 @@ themeBtn.addEventListener("click", () => {
   themeBtn.textContent = dark ? "☀️" : "🌙";
 });
 
-// ── Log ───────────────────────────────────────────────────────────────────────
+// ── Log ──
 function appendLog(text, cls = "") {
   const div = document.createElement("div");
   div.className = "log-line" + (cls ? " " + cls : "");
@@ -567,7 +565,6 @@ function appendLog(text, cls = "") {
   logWrap.appendChild(div);
   if (autoscroll.checked) logWrap.scrollTop = logWrap.scrollHeight;
 }
-
 function classifyLine(line) {
   const u = line.toUpperCase();
   if (u.includes("GOAL")) return "goal";
@@ -575,30 +572,24 @@ function classifyLine(line) {
   if (line.trim() === "[DONE]") return "done";
   return "";
 }
-
 clearLogBtn.addEventListener("click", () => { logWrap.innerHTML = ""; });
 
-// ── Bulb helpers ──────────────────────────────────────────────────────────────
+// ── Bulb helpers ──
 function getBulbIps() {
-  return $("bulb-ips").value
-    .split("\n")
-    .map(s => s.trim())
-    .filter(Boolean);
+  return $("bulb-ips").value.split("\n").map(s => s.trim()).filter(Boolean);
 }
-
 function setBulbStatus(state, text) {
   bulbStatus.className = "bulb-status " + state;
   bulbStatusTx.textContent = text;
 }
 
-// ── Colors / swatches ───────────────────────────────────────────────────────────
+// ── Colors / swatches ──
 function hsvToHex(h, s, v) {
   s /= 100; v /= 100;
   const f = n => { const k = (n + h/60) % 6; return v - v*s*Math.max(0, Math.min(k, 4-k, 1)); };
   const x = n => Math.round(f(n)*255).toString(16).padStart(2,"0");
   return `#${x(5)}${x(3)}${x(1)}`;
 }
-
 function makeSwatch(hsv) {
   const [h,s,v] = hsv;
   const el = document.createElement("div");
@@ -606,7 +597,6 @@ function makeSwatch(hsv) {
   el.style.background = (v===0 && s===0) ? "#111" : hsvToHex(h,s,v);
   return el;
 }
-
 async function loadTeamColors() {
   try {
     const r = await fetch("/api/team-colors");
@@ -621,14 +611,12 @@ async function loadTeamColors() {
   } catch (_) {}
 }
 
-// ── Games ─────────────────────────────────────────────────────────────────────
+// ── Games ──
 function badgeClass(state) {
   if (state === "LIVE" || state === "CRIT") return "live";
   if (state === "FINAL" || state === "OFF")  return "final";
   return "fut";
 }
-
-// Returns per-game delay map: { gameId: delaySecs }
 function getGameDelays() {
   const map = {};
   gameList.querySelectorAll(".game-delay-input").forEach(inp => {
@@ -677,7 +665,6 @@ function renderGames(games) {
       swatches.appendChild(makeSwatch(hc.primary)); swatches.appendChild(makeSwatch(hc.secondary));
     }
 
-    // per-game delay
     const delayWrap = document.createElement("div");
     delayWrap.className = "game-delay-wrap";
     const delayLabel = document.createElement("label");
@@ -717,26 +704,22 @@ async function fetchGames() {
   }
 }
 
-// When global default delay changes, update any game row still at old default
 $("goal_delay_seconds").addEventListener("change", () => {
   const newDefault = parseFloat($("goal_delay_seconds").value) || 0;
-  gameList.querySelectorAll(".game-delay-input").forEach(inp => {
-    inp.value = newDefault;
-  });
+  gameList.querySelectorAll(".game-delay-input").forEach(inp => { inp.value = newDefault; });
 });
 
 selectAll.addEventListener("click",   () => gameList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true));
 deselectAll.addEventListener("click", () => gameList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false));
 refreshBtn.addEventListener("click", fetchGames);
 
-// ── Bulb test ─────────────────────────────────────────────────────────────────
+// ── Bulb test ──
 testBtn.addEventListener("click", async () => {
   const ips = getBulbIps();
   if (!ips.length) { setBulbStatus("disconnected", "Enter at least one IP"); return; }
   testBtn.disabled = true;
   setBulbStatus("testing", `Testing ${ips.length} bulb${ips.length>1?"s":""}\u2026`);
   try {
-    // test all IPs in parallel
     const results = await Promise.all(ips.map(async ip => {
       try {
         const r = await fetch(`/api/test-bulb?ip=${encodeURIComponent(ip)}`);
@@ -745,14 +728,12 @@ testBtn.addEventListener("click", async () => {
       } catch (e) { return { ip, ok: false, error: e.message }; }
     }));
     const failed = results.filter(r => !r.ok);
-    if (failed.length === 0) {
-      const models = results.map(r => r.model || r.ip).join(", ");
+    if (failed.length === 0)
       setBulbStatus("connected", ips.length === 1 ? `Connected — ${results[0].model || ips[0]}` : `${ips.length} bulbs connected`);
-    } else if (failed.length === results.length) {
+    else if (failed.length === results.length)
       setBulbStatus("disconnected", failed.length === 1 ? (failed[0].error||"Failed") : `All ${failed.length} bulbs failed`);
-    } else {
+    else
       setBulbStatus("disconnected", `${failed.length}/${results.length} bulbs failed`);
-    }
   } catch (e) {
     setBulbStatus("disconnected", e.message);
   } finally {
@@ -765,18 +746,16 @@ $("bulb-ips").addEventListener("input", () => {
   setBulbStatus("", "Not tested");
 });
 
-// ── Simulate Goal ─────────────────────────────────────────────────────────────
+// ── Simulate Goal ──
 simBtn.addEventListener("click", async () => {
   const ips  = getBulbIps();
   const team = simTeam.value;
   if (!ips.length) { simResult.className="simulate-result err"; simResult.textContent="✗ Enter a bulb IP first"; return; }
   if (!team)       { simResult.className="simulate-result err"; simResult.textContent="✗ Pick a team first"; return; }
-
   const teamLabel = TEAM_NAMES[team] || team;
   simBtn.disabled = true;
   simResult.className = "simulate-result";
   simResult.textContent = `Firing ${teamLabel} flash on ${ips.length} bulb${ips.length>1?"s":""}\u2026`;
-
   try {
     const params = new URLSearchParams({
       ip: ips.join(","), team,
@@ -790,12 +769,10 @@ simBtn.addEventListener("click", async () => {
     else      { simResult.className="simulate-result err"; simResult.textContent=`✗ ${d.error||"Failed"}`; }
   } catch (e) {
     simResult.className="simulate-result err"; simResult.textContent=`✗ ${e.message}`;
-  } finally {
-    simBtn.disabled = false;
-  }
+  } finally { simBtn.disabled = false; }
 });
 
-// ── SSE ───────────────────────────────────────────────────────────────────────
+// ── SSE ──
 function openSSE() {
   if (_es) { _es.close(); _es = null; }
   _es = new EventSource("/api/log");
@@ -812,14 +789,13 @@ function openSSE() {
   _es.onerror = () => { if (_es) { _es.close(); _es = null; } };
 }
 
-// ── Status polling ────────────────────────────────────────────────────────────
+// ── Status polling ──
 function setMonitoringState(active) {
   statusPill.textContent = active ? "Monitoring" : "Idle";
   statusPill.className   = "status-pill" + (active ? " monitoring" : "");
   startBtn.disabled = active;
   stopBtn.disabled  = !active;
 }
-
 async function pollStatus() {
   try {
     const r = await fetch("/api/status");
@@ -828,24 +804,17 @@ async function pollStatus() {
   } catch (_) {}
 }
 
-// ── Start / Stop ──────────────────────────────────────────────────────────────
+// ── Start / Stop ──
 startBtn.addEventListener("click", async () => {
   const ips = getBulbIps();
   if (!ips.length) { alert("Enter at least one bulb IP."); return; }
-
   const checked = Array.from(gameList.querySelectorAll('input[type="checkbox"]:checked'));
   if (!checked.length) { alert("Select at least one game."); return; }
-
   const gameDelays = getGameDelays();
   const game_ids   = checked.map(cb => Number(cb.value));
-
-  // Build per-game delay array in same order as game_ids
   const per_game_delays = game_ids.map(id => gameDelays[id] ?? parseFloat($("goal_delay_seconds").value) ?? 35);
-
   const body = {
-    bulb_ips:              ips,
-    game_ids,
-    per_game_delays,
+    bulb_ips: ips, game_ids, per_game_delays,
     flash_duration:        parseFloat($("flash_duration").value),
     flash_interval:        parseFloat($("flash_interval").value),
     flash_quiet_window:    parseFloat($("flash_quiet_window").value),
@@ -862,7 +831,6 @@ startBtn.addEventListener("click", async () => {
     restore_transition_ms: parseInt($("restore_transition_ms").value),
     goal_delay_seconds:    parseFloat($("goal_delay_seconds").value),
   };
-
   try {
     const r = await fetch("/api/start", {
       method: "POST",
@@ -873,9 +841,7 @@ startBtn.addEventListener("click", async () => {
     if (!r.ok) { alert(d.error || "Failed to start"); return; }
     openSSE();
     setMonitoringState(true);
-  } catch (e) {
-    alert("Error: " + e.message);
-  }
+  } catch (e) { alert("Error: " + e.message); }
 });
 
 stopBtn.addEventListener("click", async () => {
@@ -887,12 +853,10 @@ stopBtn.addEventListener("click", async () => {
   } catch (e) { alert("Error: " + e.message); }
 });
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Init ──
 (async () => {
-  // restore saved IPs
   const savedIps = localStorage.getItem("nhl_bulb_ips");
   if (savedIps) $("bulb-ips").value = savedIps;
-
   await fetchGames();
   await loadTeamColors();
   await pollStatus();
