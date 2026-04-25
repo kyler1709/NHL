@@ -375,36 +375,53 @@ class BulbController:
         self._connected = False
         await self._ensure_connected()
 
-    async def _set_light_state_raw(self, state: dict) -> None:
+    async def _transition_light_state(self, state: dict) -> None:
         """
-        Send a raw set_light_state command directly to the bulb.
+        Send a raw transition_light_state command directly via the bulb's
+        protocol layer.
 
-        Using ignore_default:1 + transition:0 bypasses the bulb's firmware-level
-        smooth_transition_on setting entirely. The high-level set_hsv() call only
-        passes transition to the API layer; the firmware can still override it
-        with its stored default. This raw path tells the firmware to ignore that
-        default and apply the change instantly.
+        This is the correct low-level command for instant colour changes on
+        Kasa IoT bulbs (LB130, KL130, etc.).  Using ignore_default:1 together
+        with transition_period:0 bypasses the firmware's stored
+        smooth_transition_on setting, which otherwise overrides any transition
+        value sent through the high-level python-kasa API.
+
+        Reference: https://www.briandorey.com/post/tp-link-lb130-smart-wi-fi-led-bulb-python-control
         """
         await self._bulb.protocol.query(
-            {"smartlife.iot.smartbulb.lightingservice": {"set_light_state": state}}
+            {
+                "smartlife.iot.smartbulb.lightingservice": {
+                    "transition_light_state": state
+                }
+            }
         )
 
-    async def _flash_hsv(self, hue: int, saturation: int, value: int) -> None:
-        """Instant HSV set that bypasses firmware smooth-transition defaults."""
-        await self._set_light_state_raw({
+    async def _flash_hsv(self, hue: int, saturation: int, brightness: int) -> None:
+        """Instant colour change, bypassing firmware smooth-transition defaults."""
+        await self._transition_light_state({
             "on_off": 1,
+            "mode": "normal",
             "hue": hue,
             "saturation": saturation,
-            "brightness": value,
+            "brightness": brightness,
             "color_temp": 0,
             "transition_period": 0,
             "ignore_default": 1,
         })
 
     async def _flash_off(self) -> None:
-        """Instant off that bypasses firmware smooth-transition defaults."""
-        await self._set_light_state_raw({
+        """Instant off, bypassing firmware smooth-transition defaults."""
+        await self._transition_light_state({
             "on_off": 0,
+            "transition_period": 0,
+            "ignore_default": 1,
+        })
+
+    async def _flash_brightness(self, brightness: int) -> None:
+        """Instant brightness-only change for non-colour bulbs."""
+        await self._transition_light_state({
+            "on_off": 1,
+            "brightness": brightness,
             "transition_period": 0,
             "ignore_default": 1,
         })
@@ -487,9 +504,8 @@ class BulbController:
 
         async with self._io_lock:
             try:
-                # Connect once before the loop. Mark stale immediately so the
-                # staleness check does NOT fire mid-flash (which would trigger
-                # a slow bulb.update() and steal time from one colour).
+                # Connect once before the loop. Reset staleness so _ensure_connected
+                # does NOT fire again mid-flash (it would trigger a slow bulb.update()).
                 await self._ensure_connected()
                 self._last_updated = datetime.min.replace(tzinfo=timezone.utc)
 
@@ -497,31 +513,24 @@ class BulbController:
                 end = loop.time() + self._config.flash_duration
                 use_primary = True
 
-                # Deadline-based timing: absorb per-command network latency so
-                # both colours are displayed for exactly flash_interval seconds.
+                # Deadline-based timing: absorb per-command Wi-Fi latency so
+                # both colours show for exactly flash_interval seconds each.
                 next_tick = loop.time() + self._config.flash_interval
 
                 while loop.time() < end:
                     h, s, v = palette.primary if use_primary else palette.secondary
 
                     if v == 0:
-                        # True black — instant off, bypassing firmware defaults
                         await self._flash_off()
                     elif snapshot.supports_color:
-                        # Raw set_light_state with ignore_default:1 + transition_period:0
-                        # bypasses the bulb's stored smooth_transition_on setting.
-                        # High-level set_hsv(transition=0) does NOT do this — the
-                        # firmware still applies its default ramp on top, which
-                        # causes colour interpolation (e.g. navy→white→ice-blue).
+                        # Uses transition_light_state with ignore_default:1 and
+                        # transition_period:0 to bypass the firmware's stored
+                        # smooth_transition_on default, which causes colour
+                        # interpolation (e.g. navy → white → ice-blue) and
+                        # cannot be overridden by the high-level set_hsv() call.
                         await self._flash_hsv(h, s, _clamp(v, 1, 100))
                     else:
-                        # Non-colour bulb fallback: raw brightness set
-                        await self._set_light_state_raw({
-                            "on_off": 1,
-                            "brightness": _clamp(v, 1, 100),
-                            "transition_period": 0,
-                            "ignore_default": 1,
-                        })
+                        await self._flash_brightness(_clamp(v, 1, 100))
 
                     use_primary = not use_primary
 
