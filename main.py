@@ -40,39 +40,38 @@ class TeamPalette:
 
 
 TEAM_COLORS: dict[str, TeamPalette] = {
-    "ANA": TeamPalette((22, 100, 100),  (0, 0, 0)),
-    "BOS": TeamPalette((45, 100, 100),  (0, 0, 0)),
-    "BUF": TeamPalette((216, 100, 100), (45, 100, 100)),
-    "CGY": TeamPalette((0, 100, 100),   (45, 100, 100)),
-    "CAR": TeamPalette((0, 100, 100),   (0, 0, 0)),
-    "CHI": TeamPalette((0, 100, 100),   (0, 0, 0)),
-    "COL": TeamPalette((215, 86, 83),   (0, 73, 86)),
-    "CBJ": TeamPalette((216, 100, 100), (0, 100, 100)),
-    "DAL": TeamPalette((120, 100, 70),  (0, 0, 20)),
-    "DET": TeamPalette((0, 100, 100),   (0, 0, 100)),
-    "EDM": TeamPalette((216, 100, 100), (25, 100, 100)),
-    "FLA": TeamPalette((216, 100, 100), (0, 100, 100)),
-    "LAK": TeamPalette((0, 0, 0),       (270, 3, 62)),
-    "MIN": TeamPalette((120, 100, 70),  (0, 100, 100)),
-    "MTL": TeamPalette((0, 100, 100),   (216, 100, 100)),
-    "NSH": TeamPalette((45, 100, 100),  (216, 100, 100)),
-    "NJD": TeamPalette((0, 100, 100),   (0, 0, 0)),
-    "NYI": TeamPalette((216, 100, 100), (25, 100, 100)),
-    "NYR": TeamPalette((216, 100, 100), (0, 100, 100)),
-    "OTT": TeamPalette((0, 100, 100),   (0, 0, 0)),
-    "PHI": TeamPalette((25, 100, 100),  (0, 0, 0)),
-    "PIT": TeamPalette((0, 0, 0),       (45, 100, 100)),
-    "SJS": TeamPalette((180, 100, 70),  (0, 0, 20)),
-    "SEA": TeamPalette((180, 100, 70),  (216, 100, 100)),
-    "STL": TeamPalette((216, 100, 100), (45, 100, 100)),
-    "TBL": TeamPalette((216, 100, 100), (0, 0, 100)),
-    "TOR": TeamPalette((216, 100, 100), (0, 0, 100)),
-    # Utah Hockey Club: navy blue + gold
-    "UTA": TeamPalette((220, 100, 72),  (45, 100, 100)),
-    "VAN": TeamPalette((216, 100, 100), (120, 100, 70)),
-    "VGK": TeamPalette((45, 100, 100),  (0, 0, 20)),
-    "WSH": TeamPalette((0, 100, 100),   (216, 100, 100)),
-    "WPG": TeamPalette((216, 100, 100), (0, 0, 20)),
+    "ANA": TeamPalette((18,  99,  99),  (196,  6, 68)),   # Orange, Silver
+    "BOS": TeamPalette((42,  92,  99),  (0,    0,  7)),   # Gold, Black
+    "BUF": TeamPalette((219, 100, 53),  (42,  92, 99)),   # Navy, Gold
+    "CGY": TeamPalette((352, 100, 82),  (42,  92, 99)),   # Red, Gold
+    "CAR": TeamPalette((353,  92, 81),  (0,    0,  7)),   # Red, Black
+    "CHI": TeamPalette((350,  95, 81),  (0,    0,  7)),   # Red, Black
+    "COL": TeamPalette((341,  66, 44),  (206, 76, 57)),   # Burgundy, Blue
+    "CBJ": TeamPalette((213, 100, 33),  (353,  92, 81)),  # Navy, Red
+    "DAL": TeamPalette((161, 100, 41),  (0,    0,  7)),   # Green, Black
+    "DET": TeamPalette((353,  92, 81),  (0,    0, 100)),  # Red, White
+    "EDM": TeamPalette((18,   99, 99),  (215,  94, 26)),  # Orange, Navy
+    "FLA": TeamPalette((215,  94, 26),  (350,  92, 78)),  # Navy, Red
+    "LAK": TeamPalette((0,     0,  7),  (196,   6, 68)),  # Black, Silver
+    "MIN": TeamPalette((157,  70, 28),  (350,  85, 65)),  # Green, Red
+    "MTL": TeamPalette((354,  83, 69),  (223,  82, 54)),  # Red, Blue
+    "NSH": TeamPalette((41,   89, 100), (215,  94, 26)),  # Gold, Navy
+    "NJD": TeamPalette((353,  92, 81),  (0,    0,  7)),   # Red, Black
+    "NYI": TeamPalette((208, 100, 61),  (18,   99, 99)),  # Blue, Orange
+    "NYR": TeamPalette((220, 100, 66),  (353,  92, 81)),  # Blue, Red
+    "OTT": TeamPalette((353,  84, 77),  (37,   52, 72)),  # Red, Gold
+    "PHI": TeamPalette((17,   99, 97),  (0,    0,  7)),   # Orange, Black
+    "PIT": TeamPalette((0,     0,  7),  (42,   92, 99)),  # Black, Gold
+    "SJS": TeamPalette((184, 100, 46),  (29,  100, 92)),  # Teal, Orange
+    "SEA": TeamPalette((207, 100, 16),  (180,  29, 85)),  # Deep Navy, Ice Blue
+    "STL": TeamPalette((219, 100, 53),  (42,   92, 99)),  # Blue, Gold
+    "TBL": TeamPalette((217, 100, 41),  (0,    0, 100)),  # Blue, White
+    "TOR": TeamPalette((219, 100, 36),  (0,    0, 100)),  # Blue, White
+    "UTA": TeamPalette((216,  99, 31),  (197,  44, 73)),  # Navy, Teal
+    "VAN": TeamPalette((219, 100, 36),  (156, 100, 53)),  # Blue, Green
+    "VGK": TeamPalette((41,   50, 71),  (206,  29, 28)),  # Muted Gold, Steel Grey
+    "WSH": TeamPalette((350,  85, 77),  (215,  94, 26)),  # Red, Navy
+    "WPG": TeamPalette((215,  94, 26),  (210,  43, 38)),  # Navy, Aviator Blue
 }
 
 DEFAULT_PALETTE = TeamPalette((0, 100, 100), (0, 0, 100))
