@@ -376,18 +376,7 @@ class BulbController:
         await self._ensure_connected()
 
     async def _transition_light_state(self, state: dict) -> None:
-        """
-        Send a raw transition_light_state command directly via the bulb's
-        protocol layer.
-
-        This is the correct low-level command for instant colour changes on
-        Kasa IoT bulbs (LB130, KL130, etc.).  Using ignore_default:1 together
-        with transition_period:0 bypasses the firmware's stored
-        smooth_transition_on setting, which otherwise overrides any transition
-        value sent through the high-level python-kasa API.
-
-        Reference: https://www.briandorey.com/post/tp-link-lb130-smart-wi-fi-led-bulb-python-control
-        """
+        """Send a raw transition_light_state command via the bulb protocol."""
         await self._bulb.protocol.query(
             {
                 "smartlife.iot.smartbulb.lightingservice": {
@@ -397,7 +386,7 @@ class BulbController:
         )
 
     async def _flash_hsv(self, hue: int, saturation: int, brightness: int) -> None:
-        """Instant colour change, bypassing firmware smooth-transition defaults."""
+        """Instant colour change. color_temp=0 keeps bulb in HSV mode."""
         await self._transition_light_state({
             "on_off": 1,
             "mode": "normal",
@@ -410,7 +399,7 @@ class BulbController:
         })
 
     async def _flash_off(self) -> None:
-        """Instant off, bypassing firmware smooth-transition defaults."""
+        """Instant off."""
         await self._transition_light_state({
             "on_off": 0,
             "transition_period": 0,
@@ -501,13 +490,25 @@ class BulbController:
 
     async def flash_team(self, team_abbrev: str, snapshot: BulbSnapshot) -> None:
         palette = TEAM_COLORS.get(team_abbrev, DEFAULT_PALETTE)
+        h0, s0, v0 = palette.primary
 
         async with self._io_lock:
             try:
-                # Connect once before the loop. Reset staleness so _ensure_connected
-                # does NOT fire again mid-flash (it would trigger a slow bulb.update()).
                 await self._ensure_connected()
+                # Reset staleness so _ensure_connected does NOT fire mid-flash
+                # (a bulb.update() call mid-loop would steal time from one colour).
                 self._last_updated = datetime.min.replace(tzinfo=timezone.utc)
+
+                # --- Colour-mode primer ---
+                # The bulb live state may have color_temp != 0 (e.g. 2700 K warm
+                # white). If we immediately send HSV commands while color_temp is
+                # non-zero the firmware blends FROM warm-white TO the target colour,
+                # producing a white flash on the very first cycle.
+                # Sending one instant HSV command BEFORE the loop forces the bulb
+                # into pure HSV mode (color_temp = 0) so every subsequent flash
+                # transitions colour-to-colour with no white midpoint.
+                if snapshot.supports_color:
+                    await self._flash_hsv(h0, s0, _clamp(v0, 1, 100))
 
                 loop = asyncio.get_running_loop()
                 end = loop.time() + self._config.flash_duration
@@ -523,11 +524,6 @@ class BulbController:
                     if v == 0:
                         await self._flash_off()
                     elif snapshot.supports_color:
-                        # Uses transition_light_state with ignore_default:1 and
-                        # transition_period:0 to bypass the firmware's stored
-                        # smooth_transition_on default, which causes colour
-                        # interpolation (e.g. navy → white → ice-blue) and
-                        # cannot be overridden by the high-level set_hsv() call.
                         await self._flash_hsv(h, s, _clamp(v, 1, 100))
                     else:
                         await self._flash_brightness(_clamp(v, 1, 100))
