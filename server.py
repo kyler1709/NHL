@@ -193,30 +193,103 @@ def api_clear_log():
         _log_history = []
     return jsonify({"ok": True})
 
+@app.route("/api/last-goal-time")
+def api_last_goal_time():
+    """Return the API's best estimate of when the last goal was scored."""
+    game_id = request.args.get("game_id", "").strip()
+    if not game_id:
+        return jsonify({"ok": False, "error": "game_id required"}), 400
+    try:
+        pbp = _fetch_json(f"{NHL_API_BASE}/gamecenter/{game_id}/play-by-play")
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+
+    plays = pbp.get("plays", [])
+    goals = [p for p in plays if p.get("typeDescKey") == "goal"]
+    if not goals:
+        return jsonify({"ok": False, "error": "No goals in this game yet."}), 404
+
+    last_goal = goals[-1]
+    period    = last_goal.get("periodDescriptor", {}).get("number", 1)
+    tip       = last_goal.get("timeInPeriod", "0:00")
+    scorer    = last_goal.get("details", {}).get("scoringPlayerId", "")
+
+    # Compute wall-clock offset using startTimeUTC + period offsets
+    start_utc_str = pbp.get("startTimeUTC", "")
+    try:
+        game_start_dt = datetime.strptime(start_utc_str[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except Exception:
+        return jsonify({"ok": False, "error": "Cannot parse game start time."}), 500
+
+    try:
+        tp = tip.split(":")
+        elapsed_in_period = int(tp[0]) * 60 + int(tp[1])
+    except Exception:
+        return jsonify({"ok": False, "error": "Cannot parse goal time."}), 500
+
+    period_length    = 300 if period >= 4 else 1200
+    INTERMISSION     = 1020
+    real_offset      = (period - 1) * (period_length + INTERMISSION) + elapsed_in_period
+    goal_est_dt      = game_start_dt + __import__('datetime').timedelta(seconds=real_offset)
+
+    return jsonify({
+        "ok": True,
+        "goal_period": period,
+        "goal_time": tip,
+        "goal_est_utc": goal_est_dt.isoformat(),
+        "scorer_id": scorer,
+    })
+
+@app.route("/api/calibrate-tap", methods=["POST"])
+def api_calibrate_tap():
+    """
+    User taps this endpoint the instant they see a goal on their TV.
+    Server computes delay = now() - estimated_goal_utc.
+    Body: { "game_id": "...", "goal_est_utc": "..." }
+    """
+    body        = request.get_json(force=True) or {}
+    game_id     = body.get("game_id", "")
+    goal_utc    = body.get("goal_est_utc", "")
+
+    if not game_id or not goal_utc:
+        return jsonify({"ok": False, "error": "game_id and goal_est_utc required"}), 400
+
+    try:
+        goal_dt = datetime.strptime(goal_utc[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except Exception:
+        return jsonify({"ok": False, "error": "Invalid goal_est_utc"}), 400
+
+    now_utc = datetime.now(timezone.utc)
+    delay   = round((now_utc - goal_dt).total_seconds())
+
+    if delay < 0:
+        return jsonify({"ok": False, "error": f"Negative delay ({delay}s) — tap AFTER you see the goal on TV."}), 400
+    if delay > 600:
+        return jsonify({"ok": False, "error": f"Delay too large ({delay}s) — did you tap on the right goal?"}), 400
+
+    return jsonify({"ok": True, "delay_seconds": delay})
+
 @app.route("/api/calibrate-delay")
 def api_calibrate_delay():
     """
-    Given a game_id and the TV game clock (mm:ss) + period,
-    fetch the play-by-play, find the most recent event that
-    matches or occurred before that clock time in that period,
-    compare its real-world UTC timestamp to now(), and return
-    the computed TV delay in seconds.
+    Fallback: compute TV delay by comparing current clock on TV vs API.
+    (Primary method is now goal-tap for better accuracy.)
 
     Query params:
-        game_id – NHL game ID
-        period  – period number (1, 2, 3, 4=OT)
-        clock   – game clock as MM:SS (time remaining in period)
+      game_id – NHL game ID
+      period  – period number the TV is showing (1-4)
+      clock   – time REMAINING as MM:SS shown on TV (e.g. 16:15)
     """
-    game_id = request.args.get("game_id", "").strip()
-    period_str = request.args.get("period", "").strip()
-    clock_str = request.args.get("clock", "").strip()
+    game_id    = request.args.get("game_id",  "").strip()
+    period_str = request.args.get("period",   "").strip()
+    clock_str  = request.args.get("clock",    "").strip()
 
     if not game_id:
         return jsonify({"ok": False, "error": "game_id required"}), 400
     if not period_str:
         return jsonify({"ok": False, "error": "period required"}), 400
     if not clock_str:
-        return jsonify({"ok": False, "error": "clock required"}), 400
+        return jsonify({"ok": False, "error": "clock must be MM:SS format"}), 400
 
     try:
         period = int(period_str)
@@ -225,65 +298,71 @@ def api_calibrate_delay():
 
     try:
         parts = clock_str.split(":")
-        clock_secs = int(parts[0]) * 60 + int(parts[1])
+        tv_remaining = int(parts[0]) * 60 + int(parts[1])
     except Exception:
         return jsonify({"ok": False, "error": "clock must be MM:SS format"}), 400
 
+    # Fetch the live game state — this gives us the API's current clock
     try:
-        pbp = _fetch_json(f"{NHL_API_BASE}/gamecenter/{game_id}/play-by-play")
+        data = _fetch_json(f"{NHL_API_BASE}/gamecenter/{game_id}/landing")
     except Exception as exc:
         return jsonify({"ok": False, "error": f"NHL API error: {exc}"}), 502
 
-    plays = pbp.get("plays", [])
-    if not plays:
-        return jsonify({"ok": False, "error": "No play-by-play data available yet"}), 404
+    state = data.get("gameState", "")
+    if state not in ("LIVE", "CRIT"):
+        return jsonify({"ok": False, "error": f"Game is not live (state={state}). Calibration requires a live game."}), 400
 
-    candidates = []
-    for play in plays:
-        if play.get("periodDescriptor", {}).get("number") != period:
-            continue
-        time_remaining = play.get("timeRemaining", "")
-        utc_time = play.get("timeActual", "")
-        if not utc_time or not time_remaining:
-            continue
-        try:
-            tr_parts = time_remaining.split(":")
-            play_remaining = int(tr_parts[0]) * 60 + int(tr_parts[1])
-        except Exception:
-            continue
-        # Keep plays that have already aired on TV (play_remaining <= TV clock)
-        if play_remaining <= clock_secs:
-            candidates.append((play_remaining, utc_time, play))
+    clock_data = data.get("clock", {})
+    period_desc = data.get("periodDescriptor", {})
 
-    if not candidates:
-        return jsonify({"ok": False, "error": "No matching plays found for that period/clock. Try a busier moment."}), 404
+    api_clock_str = clock_data.get("timeRemaining", "")
+    api_period    = period_desc.get("number")
+    in_intermission = clock_data.get("inIntermission", False)
 
-    # Pick the play closest to (but not past) the TV clock — largest play_remaining
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    best_remaining, best_utc, best_play = candidates[0]
+    if in_intermission:
+        return jsonify({"ok": False, "error": "Game is in intermission. Wait for the next period to start."}), 400
+
+    if not api_clock_str:
+        return jsonify({"ok": False, "error": "Could not read API clock. Try again."}), 500
 
     try:
-        play_dt = datetime.strptime(best_utc[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+        api_parts = api_clock_str.split(":")
+        api_remaining = int(api_parts[0]) * 60 + int(api_parts[1])
     except Exception:
-        return jsonify({"ok": False, "error": f"Could not parse play time: {best_utc}"}), 500
+        return jsonify({"ok": False, "error": f"Could not parse API clock: {api_clock_str}"}), 500
 
-    now_utc = datetime.now(timezone.utc)
-    real_elapsed_since_play = (now_utc - play_dt).total_seconds()
-    tv_elapsed_since_play = clock_secs - best_remaining  # how far the TV clock has moved past this play
-    delay = real_elapsed_since_play - tv_elapsed_since_play
+    # If the API is in a later period than TV, account for the full period difference
+    period_length = 300 if period >= 4 else 1200
+    period_diff = (api_period - period) * period_length
+
+    # Delay = how far behind the TV is vs the API right now
+    delay = (tv_remaining - api_remaining) + period_diff
 
     if delay < 0:
-        return jsonify({"ok": False, "error": f"Computed delay is negative ({delay:.1f}s) — check your clock input."}), 400
+        return jsonify({
+            "ok": False,
+            "error": f"Computed delay is negative ({delay}s) — enter your TV clock, not the API clock."
+        }), 400
+
+    if delay > 600:
+        return jsonify({
+            "ok": False,
+            "error": f"Delay over 10 min ({delay}s) — check period and clock."
+        }), 400
 
     return jsonify({
         "ok": True,
-        "delay_seconds": round(delay),
-        "play_type": best_play.get("typeDescKey", "event"),
-        "play_clock": best_play.get("timeRemaining", "?"),
+        "delay_seconds": delay,
+        "play_type": "live-clock-sync",
+        "play_clock": api_clock_str,
         "debug": {
-            "play_utc": best_utc,
-            "real_elapsed": round(real_elapsed_since_play, 1),
-            "tv_elapsed": tv_elapsed_since_play,
+            "tv_period": period,
+            "tv_clock": clock_str,
+            "tv_remaining": tv_remaining,
+            "api_period": api_period,
+            "api_clock": api_clock_str,
+            "api_remaining": api_remaining,
+            "period_diff_secs": period_diff,
         }
     })
 

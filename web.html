@@ -792,9 +792,11 @@ function getGameDelays() {
 
 // ── Calibration popover (auto-detects period from NHL API) ───────────────────
 let _openPopover = null;
+let _clockPollTimer = null;
 
 function closeAllPopovers() {
   if (_openPopover) { _openPopover.classList.remove("open"); _openPopover = null; }
+  if (_clockPollTimer) { clearInterval(_clockPollTimer); _clockPollTimer = null; }
 }
 
 document.addEventListener("click", e => {
@@ -840,7 +842,101 @@ function buildCalPopover(gameId, delayInput) {
   const result = document.createElement("div");
   result.className = "cal-result";
 
-  // Go button
+  // Mode 1: Goal tap (primary)
+  const tapSection = document.createElement('div');
+  tapSection.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+
+  const tapInstructions = document.createElement('div');
+  tapInstructions.style.cssText = 'font-size:10px;color:var(--muted);line-height:1.6;';
+  tapInstructions.innerHTML = 'Wait for a goal.<br>The instant you <b>see it on your TV</b>, tap:';
+
+  const tapBtn = document.createElement('button');
+  tapBtn.className = 'btn btn-primary';
+  tapBtn.style.cssText = 'width:100%;justify-content:center;font-size:13px;padding:8px;';
+  tapBtn.textContent = '🚨 I just saw a GOAL on TV';
+
+  const tapResult = document.createElement('div');
+  tapResult.className = 'cal-result';
+
+  let pendingGoalUtc = null;
+
+  // Pre-fetch the last goal UTC so we're ready when user taps
+  async function prefetchGoal() {
+    try {
+      const r = await fetch(`/api/last-goal-time?game_id=${gameId}`);
+      const d = await r.json();
+      if (d.ok) {
+        pendingGoalUtc = d.goal_est_utc;
+        tapInstructions.innerHTML = `Last goal: P${d.goal_period} ${d.goal_time}<br>When you <b>see it on TV</b>, tap:`;
+      } else {
+        tapInstructions.innerHTML = `No goals yet — wait for one,<br>then tap the instant you see it:`;
+      }
+    } catch(e) {}
+  }
+
+  tapBtn.addEventListener('click', async e => {
+    e.stopPropagation();
+    if (!pendingGoalUtc) {
+      tapResult.className = 'cal-result err';
+      tapResult.textContent = 'No goal data yet — wait for a goal first.';
+      return;
+    }
+    tapBtn.disabled = true;
+    try {
+      const r = await fetch('/api/calibrate-tap', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ game_id: gameId, goal_est_utc: pendingGoalUtc })
+      });
+      const d = await r.json();
+      if (d.ok) {
+        delayInput.value = d.delay_seconds;
+        delayInput.classList.remove('pending');
+        saveSettings();
+        tapResult.className = 'cal-result ok';
+        tapResult.textContent = `${d.delay_seconds}s delay set ✓`;
+        const applyBtn = delayInput.closest('.game-delay-wrap')
+          ?.parentElement?.querySelector('.delay-apply-btn');
+        if (applyBtn) applyBtn.click();
+        // Refresh for next goal
+        pendingGoalUtc = null;
+        setTimeout(() => { prefetchGoal(); tapBtn.disabled = false; }, 2000);
+        setTimeout(closeAllPopovers, 2500);
+      } else {
+        tapResult.className = 'cal-result err';
+        tapResult.textContent = d.error;
+        tapBtn.disabled = false;
+      }
+    } catch(err) {
+      tapResult.className = 'cal-result err';
+      tapResult.textContent = err.message;
+      tapBtn.disabled = false;
+    }
+  });
+
+  tapSection.append(tapInstructions, tapBtn, tapResult);
+
+  // Divider
+  const divider = document.createElement('div');
+  divider.style.cssText = 'border-top:1px solid var(--border);margin:2px 0;';
+
+  // Mode 2: Clock input (fallback, collapsed)
+  const clockToggle = document.createElement('button');
+  clockToggle.className = 'btn btn-xs';
+  clockToggle.style.cssText = 'width:100%;justify-content:center;color:var(--muted);';
+  clockToggle.textContent = 'Use clock instead ▾';
+
+  const clockSection = document.createElement('div');
+  clockSection.style.cssText = 'display:none;flex-direction:column;gap:6px;';
+
+  clockToggle.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = clockSection.style.display === 'flex';
+    clockSection.style.display = open ? 'none' : 'flex';
+    clockToggle.textContent = open ? 'Use clock instead ▾' : 'Use clock instead ▴';
+  });
+
+  // Go button (for clock method)
   const goBtn = document.createElement("button");
   goBtn.className = "btn btn-primary";
   goBtn.style.cssText = "width:100%;justify-content:center;margin-top:2px";
@@ -867,18 +963,19 @@ function buildCalPopover(gameId, delayInput) {
         delayInput.classList.remove("pending");
         saveSettings();
         result.className = "cal-result ok";
-        result.textContent = `✓ ${d.delay_seconds}s delay (${d.play_type} @ ${d.play_clock})`;
-        // Update the game row clock display immediately
-        const clockEl = $(`clock-${gameId}`);
-        if (clockEl) clockEl.textContent += ` ← delay set`;
-        setTimeout(closeAllPopovers, 2200);
+        result.textContent = `${d.delay_seconds}s delay ✓`;
+        const applyBtn = delayInput.closest('.game-delay-wrap')
+          ?.parentElement
+          ?.querySelector('.delay-apply-btn');
+        if (applyBtn) applyBtn.click();
+        setTimeout(closeAllPopovers, 2500);
       } else {
         result.className = "cal-result err";
-        result.textContent = `✗ ${d.error}`;
+        result.textContent = d.error;
       }
     } catch(err) {
       result.className = "cal-result err";
-      result.textContent = `✗ ${err.message}`;
+      result.textContent = err.message;
     } finally {
       goBtn.disabled = false;
     }
@@ -886,7 +983,11 @@ function buildCalPopover(gameId, delayInput) {
 
   clockInput.addEventListener("keydown", e => { if (e.key === "Enter") goBtn.click(); });
 
-  pop.append(autoStatus, periodLabel, periodSel, clockLabel, clockInput, goBtn, result);
+  // Assemble clock section
+  clockSection.append(periodLabel, periodSel, clockLabel, clockInput, goBtn, result);
+
+  pop.append(autoStatus, tapSection, divider, clockToggle, clockSection);
+  prefetchGoal();
 
   // Auto-detect game state when popover opens
   async function autoDetectGameState() {
@@ -944,6 +1045,9 @@ function buildCalPopover(gameId, delayInput) {
       pop.style.left = left + 'px';
       pop.classList.add("open");
       _openPopover = pop;
+      // Start live clock ticker
+      _clockPollTimer = setInterval(pollApiClock, 2000);
+      pollApiClock(); // immediate first call
       autoDetectGameState();
       clockInput.focus();
     }
