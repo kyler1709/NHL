@@ -1,15 +1,13 @@
 """
 NHL Goal Light — Flask server + subprocess manager
 ===================================================
-Run:  python server.py
+Run: python server.py
 Then open http://localhost:5000
 
 Dependencies:
     pip install flask aiohttp python-kasa
 """
-
 from __future__ import annotations
-
 import asyncio
 import concurrent.futures
 import os
@@ -20,7 +18,6 @@ import threading
 import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-
 from flask import Flask, Response, jsonify, request, send_from_directory, stream_with_context
 
 # ── optional: fall back to urllib if requests isn't installed ─────────────────
@@ -37,7 +34,6 @@ except ImportError:
             return _json.loads(resp.read())
 
 # ─────────────────────────────────────────────────────────────────────────────
-
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAIN_SCRIPT = os.path.join(HERE, "main.py")
 NHL_API_BASE = "https://api-web.nhle.com/v1"
@@ -53,68 +49,69 @@ _proc: subprocess.Popen | None = None
 _proc_lock = threading.Lock()
 _log_queue: queue.Queue[str | None] = queue.Queue()
 
+# ── persistent log history (survives page refresh / multi-device) ─────────────
+_log_history: list[str] = []
+_log_history_lock = threading.Lock()
+MAX_LOG_HISTORY = 2000
+
 # ── games cache ───────────────────────────────────────────────────────────────
 _games_cache: list[dict] | None = None
 _games_cache_ts: float = 0.0
 _GAMES_CACHE_TTL = 60.0  # seconds
 
-
 ENV_MAP = {
-    "bulb_ip":                "BULB_IP",
-    "flash_duration":         "FLASH_DURATION",
-    "flash_interval":         "FLASH_INTERVAL",
-    "flash_quiet_window":     "FLASH_QUIET_WINDOW",
-    "flash_transition_ms":    "FLASH_TRANSITION_MS",
-    "poll_live_seconds":      "POLL_LIVE_SECONDS",
-    "poll_critical_seconds":  "POLL_CRITICAL_SECONDS",
-    "poll_pregame_seconds":   "POLL_PREGAME_SECONDS",
-    "poll_error_seconds":     "POLL_ERROR_SECONDS",
-    "request_timeout":        "NHL_REQUEST_TIMEOUT",
-    "max_retries":            "NHL_MAX_RETRIES",
-    "backoff_base":           "NHL_BACKOFF_BASE",
-    "backoff_max":            "NHL_BACKOFF_MAX",
+    "bulb_ip": "BULB_IP",
+    "flash_duration": "FLASH_DURATION",
+    "flash_interval": "FLASH_INTERVAL",
+    "flash_quiet_window": "FLASH_QUIET_WINDOW",
+    "flash_transition_ms": "FLASH_TRANSITION_MS",
+    "poll_live_seconds": "POLL_LIVE_SECONDS",
+    "poll_critical_seconds": "POLL_CRITICAL_SECONDS",
+    "poll_pregame_seconds": "POLL_PREGAME_SECONDS",
+    "poll_error_seconds": "POLL_ERROR_SECONDS",
+    "request_timeout": "NHL_REQUEST_TIMEOUT",
+    "max_retries": "NHL_MAX_RETRIES",
+    "backoff_base": "NHL_BACKOFF_BASE",
+    "backoff_max": "NHL_BACKOFF_MAX",
     "pregame_buffer_seconds": "PREGAME_BUFFER_SECONDS",
-    "restore_transition_ms":  "RESTORE_TRANSITION_MS",
-    "goal_delay_seconds":     "GOAL_DELAY_SECONDS",
+    "restore_transition_ms": "RESTORE_TRANSITION_MS",
+    "goal_delay_seconds": "GOAL_DELAY_SECONDS",
 }
 
-
 # ── helpers ───────────────────────────────────────────────────────────────────
-
 def _format_local_time(utc_str: str) -> str:
     dt = datetime.strptime(utc_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     local_tz = datetime.now().astimezone().tzinfo or timezone.utc
     return dt.astimezone(local_tz).strftime("%I:%M %p")
 
-
 def _read_stdout(proc: subprocess.Popen) -> None:
-    """Drain proc.stdout line-by-line into _log_queue; push None sentinel at EOF."""
+    """Drain proc.stdout into _log_queue AND append to persistent _log_history."""
+    global _log_history
     try:
         for raw in proc.stdout:
             line = raw.decode(errors="replace").rstrip()
             _log_queue.put(line)
+            with _log_history_lock:
+                _log_history.append(line)
+                if len(_log_history) > MAX_LOG_HISTORY:
+                    _log_history = _log_history[-MAX_LOG_HISTORY:]
     except Exception:
         pass
     finally:
         _log_queue.put(None)
 
-
 def _proc_is_alive() -> bool:
     global _proc
     return _proc is not None and _proc.poll() is None
 
-
 # ── routes ────────────────────────────────────────────────────────────────────
-
 @app.route("/")
 def index():
     return send_from_directory(HERE, "web.html")
 
-
 @app.route("/api/games")
 def api_games():
     global _games_cache, _games_cache_ts
-
     now = time.monotonic()
     if _games_cache is not None and (now - _games_cache_ts) < _GAMES_CACHE_TTL:
         return jsonify(_games_cache)
@@ -140,13 +137,13 @@ def api_games():
 
             utc_str = g.get("startTimeUTC", "1970-01-01T00:00:00Z")
             games.append({
-                "id":              g["id"],
-                "away_abbrev":     away.get("abbrev", "???"),
-                "away_name":       _name(away),
-                "home_abbrev":     home.get("abbrev", "???"),
-                "home_name":       _name(home),
-                "start_time_utc":  utc_str,
-                "game_state":      g.get("gameState", ""),
+                "id": g["id"],
+                "away_abbrev": away.get("abbrev", "???"),
+                "away_name": _name(away),
+                "home_abbrev": home.get("abbrev", "???"),
+                "home_name": _name(home),
+                "start_time_utc": utc_str,
+                "game_state": g.get("gameState", ""),
                 "start_time_local": _format_local_time(utc_str),
             })
 
@@ -155,6 +152,46 @@ def api_games():
     _games_cache_ts = now
     return jsonify(games)
 
+@app.route("/api/game-state/<game_id>")
+def api_game_state(game_id: str):
+    """Return live game state: period, clock, score, intermission status."""
+    try:
+        data = _fetch_json(f"{NHL_API_BASE}/gamecenter/{game_id}/landing")
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 502
+
+    state = data.get("gameState", "")
+    clock_data = data.get("clock", {})
+    period_desc = data.get("periodDescriptor", {})
+    away_team = data.get("awayTeam", {})
+    home_team = data.get("homeTeam", {})
+
+    return jsonify({
+        "ok": True,
+        "state": state,
+        "period": period_desc.get("number"),
+        "period_type": period_desc.get("periodType", "REG"),
+        "clock": clock_data.get("timeRemaining"),
+        "in_intermission": clock_data.get("inIntermission", False),
+        "away_abbrev": away_team.get("abbrev", ""),
+        "away_score": away_team.get("score", 0),
+        "home_abbrev": home_team.get("abbrev", ""),
+        "home_score": home_team.get("score", 0),
+    })
+
+@app.route("/api/log-history")
+def api_log_history():
+    """Return all persistent log entries so clients can load history on connect."""
+    with _log_history_lock:
+        return jsonify({"entries": list(_log_history)})
+
+@app.route("/api/clear-log", methods=["POST"])
+def api_clear_log():
+    """Clear the persistent log history server-side."""
+    global _log_history
+    with _log_history_lock:
+        _log_history = []
+    return jsonify({"ok": True})
 
 @app.route("/api/calibrate-delay")
 def api_calibrate_delay():
@@ -166,9 +203,9 @@ def api_calibrate_delay():
     the computed TV delay in seconds.
 
     Query params:
-      game_id  – NHL game ID
-      period   – period number (1, 2, 3, 4=OT)
-      clock    – game clock as MM:SS (time remaining in period)
+        game_id – NHL game ID
+        period  – period number (1, 2, 3, 4=OT)
+        clock   – game clock as MM:SS (time remaining in period)
     """
     game_id = request.args.get("game_id", "").strip()
     period_str = request.args.get("period", "").strip()
@@ -186,7 +223,6 @@ def api_calibrate_delay():
     except ValueError:
         return jsonify({"ok": False, "error": "period must be a number"}), 400
 
-    # Parse clock MM:SS → seconds remaining in period
     try:
         parts = clock_str.split(":")
         clock_secs = int(parts[0]) * 60 + int(parts[1])
@@ -202,16 +238,11 @@ def api_calibrate_delay():
     if not plays:
         return jsonify({"ok": False, "error": "No play-by-play data available yet"}), 404
 
-    # Filter to plays in the requested period that have a real UTC time
-    # and whose clock time is >= the TV clock (i.e., happened before or at what we see)
-    # NHL clock is time REMAINING, so higher remaining = earlier in period
     candidates = []
     for play in plays:
         if play.get("periodDescriptor", {}).get("number") != period:
             continue
-        time_in_period = play.get("timeInPeriod", "")  # elapsed, MM:SS
-        time_remaining = play.get("timeRemaining", "")  # remaining, MM:SS
-        utc_time = play.get("timeActual", "") or play.get("eventOwnerTeamId", None)
+        time_remaining = play.get("timeRemaining", "")
         utc_time = play.get("timeActual", "")
         if not utc_time or not time_remaining:
             continue
@@ -220,38 +251,25 @@ def api_calibrate_delay():
             play_remaining = int(tr_parts[0]) * 60 + int(tr_parts[1])
         except Exception:
             continue
-        # The TV is showing clock_secs remaining.
-        # We want plays that have ALREADY happened on TV,
-        # meaning the play's remaining time is >= clock_secs (earlier in period)
-        if play_remaining >= clock_secs:
+        # Keep plays that have already aired on TV (play_remaining <= TV clock)
+        if play_remaining <= clock_secs:
             candidates.append((play_remaining, utc_time, play))
 
     if not candidates:
         return jsonify({"ok": False, "error": "No matching plays found for that period/clock. Try a busier moment."}), 404
 
-    # Pick the play closest to the TV clock (smallest remaining that is still >= clock_secs)
-    candidates.sort(key=lambda x: x[0])  # ascending remaining = most recent first among those >= clock
-    # We want the one with the SMALLEST remaining that is still >= clock_secs
-    # That's the most recent event the TV has already shown
+    # Pick the play closest to (but not past) the TV clock — largest play_remaining
+    candidates.sort(key=lambda x: x[0], reverse=True)
     best_remaining, best_utc, best_play = candidates[0]
 
-    # Parse the play's UTC time
     try:
-        # NHL format: "2024-04-25T01:23:45Z" or similar
         play_dt = datetime.strptime(best_utc[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
     except Exception:
         return jsonify({"ok": False, "error": f"Could not parse play time: {best_utc}"}), 500
 
     now_utc = datetime.now(timezone.utc)
-
-    # Time since that event happened in real life
     real_elapsed_since_play = (now_utc - play_dt).total_seconds()
-
-    # On TV, clock shows clock_secs remaining; that play had best_remaining remaining
-    # So TV thinks that play happened (best_remaining - clock_secs) seconds ago
-    tv_elapsed_since_play = best_remaining - clock_secs
-
-    # Delay = how much further behind the TV is vs reality
+    tv_elapsed_since_play = clock_secs - best_remaining  # how far the TV clock has moved past this play
     delay = real_elapsed_since_play - tv_elapsed_since_play
 
     if delay < 0:
@@ -269,17 +287,14 @@ def api_calibrate_delay():
         }
     })
 
-
 @app.route("/api/start", methods=["POST"])
 def api_start():
     global _proc
-
     with _proc_lock:
         if _proc_is_alive():
             return jsonify({"error": "Already monitoring. Stop first."}), 409
 
         body: dict = request.get_json(force=True) or {}
-
         if not body.get("bulb_ip", "").strip():
             return jsonify({"error": "bulb_ip is required"}), 400
 
@@ -287,7 +302,6 @@ def api_start():
         if not game_ids:
             return jsonify({"error": "At least one game_id is required"}), 400
 
-        # Build subprocess environment
         env = os.environ.copy()
         for json_key, env_key in ENV_MAP.items():
             if json_key in body and body[json_key] is not None:
@@ -295,12 +309,10 @@ def api_start():
 
         env["GAME_IDS"] = ",".join(str(gid) for gid in game_ids)
 
-        # per-game delays: pass as comma-separated list paired with game_ids
         per_game_delays = body.get("per_game_delays", [])
         if per_game_delays:
             env["PER_GAME_DELAYS"] = ",".join(str(d) for d in per_game_delays)
 
-        # Drain stale queue entries from a previous run
         while not _log_queue.empty():
             try:
                 _log_queue.get_nowait()
@@ -319,24 +331,18 @@ def api_start():
 
         t = threading.Thread(target=_read_stdout, args=(_proc,), daemon=True)
         t.start()
-
-    return jsonify({"ok": True, "pid": _proc.pid})
-
+        return jsonify({"ok": True, "pid": _proc.pid})
 
 @app.route("/api/stop", methods=["POST"])
 def api_stop():
     global _proc
-
     with _proc_lock:
         if not _proc_is_alive():
             return jsonify({"ok": True, "message": "No process running"})
-
         try:
             _proc.terminate()
         except Exception:
             pass
-
-        # Give it 3 s then kill
         try:
             _proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
@@ -344,11 +350,8 @@ def api_stop():
                 _proc.kill()
             except Exception:
                 pass
-
         _proc = None
-
-    return jsonify({"ok": True})
-
+        return jsonify({"ok": True})
 
 @app.route("/api/status")
 def api_status():
@@ -357,9 +360,8 @@ def api_status():
         pid = _proc.pid if alive else None
     return jsonify({
         "state": "monitoring" if alive else "idle",
-        "pid":   pid,
+        "pid": pid,
     })
-
 
 @app.route("/api/log")
 def api_log():
@@ -368,14 +370,11 @@ def api_log():
             try:
                 line = _log_queue.get(timeout=30)
             except queue.Empty:
-                # Heartbeat keeps the connection alive
                 yield ": heartbeat\n\n"
                 continue
-
             if line is None:
                 yield "data: [DONE]\n\n"
                 return
-            # Escape newlines inside the line so SSE framing stays intact
             safe = line.replace("\n", " ")
             yield f"data: {safe}\n\n"
 
@@ -383,16 +382,14 @@ def api_log():
         stream_with_context(generate()),
         mimetype="text/event-stream",
         headers={
-            "Cache-Control":    "no-cache",
+            "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
         },
     )
 
-
 @app.route("/api/test-bulb")
 def api_test_bulb():
     from kasa.iot import IotBulb
-
     ip = request.args.get("ip", "").strip()
     if not ip:
         return jsonify({"ok": False, "model": None, "error": "No IP provided"})
@@ -411,22 +408,18 @@ def api_test_bulb():
     except Exception as exc:
         return jsonify({"ok": False, "model": None, "error": str(exc)})
 
-
 @app.route("/api/team-colors")
 def api_team_colors():
-    """Expose TEAM_COLORS as HSV tuples for the frontend swatches."""
     out = {}
     for abbrev, palette in main.TEAM_COLORS.items():
         out[abbrev] = {
-            "primary":   list(palette.primary),
+            "primary": list(palette.primary),
             "secondary": list(palette.secondary),
         }
     return jsonify(out)
 
-
 @app.route("/api/simulate-goal")
 def api_simulate_goal():
-    """Simulate a goal for testing: flash the bulb with the team's colors."""
     try:
         ip = request.args.get("ip", "").strip()
         team = request.args.get("team", "").strip().upper()
@@ -438,7 +431,6 @@ def api_simulate_goal():
             return jsonify({"ok": False, "error": "No IP provided"})
         if not team:
             return jsonify({"ok": False, "error": "No team provided"})
-
         if team not in main.TEAM_COLORS:
             return jsonify({"ok": False, "error": f"Unknown team: {team}"})
 
@@ -473,14 +465,11 @@ def api_simulate_goal():
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             pool.submit(_run_sync).result(timeout=60)
-
         return jsonify({"ok": True, "error": None})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
 
-
 # ── entry point ───────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
     port = int(os.getenv("SERVER_PORT", "5000"))
     print(f"NHL Goal Light GUI → http://localhost:{port}")
