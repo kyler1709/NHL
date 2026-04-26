@@ -156,6 +156,120 @@ def api_games():
     return jsonify(games)
 
 
+@app.route("/api/calibrate-delay")
+def api_calibrate_delay():
+    """
+    Given a game_id and the TV game clock (mm:ss) + period,
+    fetch the play-by-play, find the most recent event that
+    matches or occurred before that clock time in that period,
+    compare its real-world UTC timestamp to now(), and return
+    the computed TV delay in seconds.
+
+    Query params:
+      game_id  – NHL game ID
+      period   – period number (1, 2, 3, 4=OT)
+      clock    – game clock as MM:SS (time remaining in period)
+    """
+    game_id = request.args.get("game_id", "").strip()
+    period_str = request.args.get("period", "").strip()
+    clock_str = request.args.get("clock", "").strip()
+
+    if not game_id:
+        return jsonify({"ok": False, "error": "game_id required"}), 400
+    if not period_str:
+        return jsonify({"ok": False, "error": "period required"}), 400
+    if not clock_str:
+        return jsonify({"ok": False, "error": "clock required"}), 400
+
+    try:
+        period = int(period_str)
+    except ValueError:
+        return jsonify({"ok": False, "error": "period must be a number"}), 400
+
+    # Parse clock MM:SS → seconds remaining in period
+    try:
+        parts = clock_str.split(":")
+        clock_secs = int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        return jsonify({"ok": False, "error": "clock must be MM:SS format"}), 400
+
+    try:
+        pbp = _fetch_json(f"{NHL_API_BASE}/gamecenter/{game_id}/play-by-play")
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"NHL API error: {exc}"}), 502
+
+    plays = pbp.get("plays", [])
+    if not plays:
+        return jsonify({"ok": False, "error": "No play-by-play data available yet"}), 404
+
+    # Filter to plays in the requested period that have a real UTC time
+    # and whose clock time is >= the TV clock (i.e., happened before or at what we see)
+    # NHL clock is time REMAINING, so higher remaining = earlier in period
+    candidates = []
+    for play in plays:
+        if play.get("periodDescriptor", {}).get("number") != period:
+            continue
+        time_in_period = play.get("timeInPeriod", "")  # elapsed, MM:SS
+        time_remaining = play.get("timeRemaining", "")  # remaining, MM:SS
+        utc_time = play.get("timeActual", "") or play.get("eventOwnerTeamId", None)
+        utc_time = play.get("timeActual", "")
+        if not utc_time or not time_remaining:
+            continue
+        try:
+            tr_parts = time_remaining.split(":")
+            play_remaining = int(tr_parts[0]) * 60 + int(tr_parts[1])
+        except Exception:
+            continue
+        # The TV is showing clock_secs remaining.
+        # We want plays that have ALREADY happened on TV,
+        # meaning the play's remaining time is >= clock_secs (earlier in period)
+        if play_remaining >= clock_secs:
+            candidates.append((play_remaining, utc_time, play))
+
+    if not candidates:
+        return jsonify({"ok": False, "error": "No matching plays found for that period/clock. Try a busier moment."}), 404
+
+    # Pick the play closest to the TV clock (smallest remaining that is still >= clock_secs)
+    candidates.sort(key=lambda x: x[0])  # ascending remaining = most recent first among those >= clock
+    # We want the one with the SMALLEST remaining that is still >= clock_secs
+    # That's the most recent event the TV has already shown
+    best_remaining, best_utc, best_play = candidates[0]
+
+    # Parse the play's UTC time
+    try:
+        # NHL format: "2024-04-25T01:23:45Z" or similar
+        play_dt = datetime.strptime(best_utc[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except Exception:
+        return jsonify({"ok": False, "error": f"Could not parse play time: {best_utc}"}), 500
+
+    now_utc = datetime.now(timezone.utc)
+
+    # Time since that event happened in real life
+    real_elapsed_since_play = (now_utc - play_dt).total_seconds()
+
+    # On TV, clock shows clock_secs remaining; that play had best_remaining remaining
+    # So TV thinks that play happened (best_remaining - clock_secs) seconds ago
+    tv_elapsed_since_play = best_remaining - clock_secs
+
+    # Delay = how much further behind the TV is vs reality
+    delay = real_elapsed_since_play - tv_elapsed_since_play
+
+    if delay < 0:
+        return jsonify({"ok": False, "error": f"Computed delay is negative ({delay:.1f}s) — check your clock input."}), 400
+
+    return jsonify({
+        "ok": True,
+        "delay_seconds": round(delay),
+        "play_type": best_play.get("typeDescKey", "event"),
+        "play_clock": best_play.get("timeRemaining", "?"),
+        "debug": {
+            "play_utc": best_utc,
+            "real_elapsed": round(real_elapsed_since_play, 1),
+            "tv_elapsed": tv_elapsed_since_play,
+        }
+    })
+
+
 @app.route("/api/start", methods=["POST"])
 def api_start():
     global _proc
@@ -180,6 +294,11 @@ def api_start():
                 env[env_key] = str(body[json_key])
 
         env["GAME_IDS"] = ",".join(str(gid) for gid in game_ids)
+
+        # per-game delays: pass as comma-separated list paired with game_ids
+        per_game_delays = body.get("per_game_delays", [])
+        if per_game_delays:
+            env["PER_GAME_DELAYS"] = ",".join(str(d) for d in per_game_delays)
 
         # Drain stale queue entries from a previous run
         while not _log_queue.empty():
@@ -313,7 +432,7 @@ def api_simulate_goal():
         team = request.args.get("team", "").strip().upper()
         flash_duration = float(request.args.get("flash_duration", "12"))
         flash_interval = float(request.args.get("flash_interval", "0.45"))
-        flash_transition_ms = int(request.args.get("flash_transition_ms", "120"))
+        flash_transition_ms = int(request.args.get("flash_transition_ms", "0"))
 
         if not ip:
             return jsonify({"ok": False, "error": "No IP provided"})

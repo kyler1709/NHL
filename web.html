@@ -156,6 +156,10 @@ header {
 .btn-danger { border-color: var(--red); color: var(--red); }
 .btn-danger:hover:not(:disabled) { background: #3a1515; border-color: var(--red); }
 
+.btn-xs {
+  font-size: 10px; padding: 2px 7px; border-radius: 3px;
+}
+
 /* ── Bulb status ── */
 .bulb-status {
   margin-top: 6px;
@@ -235,13 +239,23 @@ header {
 .game-badge.final { background: var(--surface2); color: var(--muted); }
 .game-badge.fut   { background: var(--surface2); color: var(--muted); }
 
-.team-swatches { display: flex; gap: 3px; flex-shrink: 0; }
+/* Team colour swatches — larger, pill-shaped, side by side */
+.team-swatches {
+  display: flex; align-items: center; gap: 2px; flex-shrink: 0;
+}
 .swatch {
-  width: 10px; height: 10px; border-radius: 2px;
-  border: 1px solid rgba(255,255,255,.08);
+  width: 14px; height: 14px; border-radius: 3px;
+  border: 1px solid rgba(255,255,255,.10);
+  flex-shrink: 0;
+}
+.swatch-sep {
+  width: 1px; height: 12px;
+  background: var(--border);
+  margin: 0 3px;
+  flex-shrink: 0;
 }
 
-/* per-game delay */
+/* per-game delay + calibrate */
 .game-delay-wrap {
   display: flex; align-items: center; gap: 3px; flex-shrink: 0;
 }
@@ -260,6 +274,41 @@ header {
   text-align: center;
 }
 .game-delay-input:focus { border-color: var(--accent); }
+
+/* Calibrate popover */
+.cal-wrap { position: relative; flex-shrink: 0; }
+.cal-popover {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 300;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  width: 210px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  gap: 8px;
+  flex-direction: column;
+}
+.cal-popover.open { display: flex; }
+.cal-popover label { font-size: 11px; color: var(--muted); margin-bottom: 2px; display:block; }
+.cal-popover input, .cal-popover select {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 7px;
+  outline: none;
+}
+.cal-popover input:focus, .cal-popover select:focus { border-color: var(--accent); }
+.cal-result { font-size: 11px; min-height: 14px; }
+.cal-result.ok  { color: var(--green); }
+.cal-result.err { color: var(--red); }
 
 .games-empty { padding: 20px 14px; color: var(--muted); font-size: 12px; text-align: center; }
 
@@ -344,7 +393,7 @@ header {
   /* tighten row on all mobile */
   .game-row { padding: 8px 10px; gap: 6px; }
 
-  /* swatches hidden on all mobile — not enough room */
+  /* swatches hidden on narrowest mobile */
   .team-swatches { display: none; }
 
   .controls .btn { flex: 1; justify-content: center; }
@@ -352,9 +401,7 @@ header {
   #global-tip { max-width: 220px !important; }
 }
 
-/* ── Portrait-only phones (≤ 430px wide) ──
-   Hide the start time on the narrowest screens so
-   checkbox + matchup + badge + delay all fit on one row. */
+/* ── Portrait-only phones (≤ 430px wide) ── */
 @media (max-width: 430px) {
   .game-time { display: none; }
 }
@@ -401,7 +448,7 @@ header {
       <div class="field"><label>Duration (s) <span class="tip" data-tip="How long the bulb flashes after a goal. e.g. 12 = 12 seconds.">?</span></label><input type="number" id="flash_duration" value="12" min="1" step="1" /></div>
       <div class="field"><label>Interval (s) <span class="tip" data-tip="How fast the bulb alternates colors. Lower = faster strobe. e.g. 0.45.">?</span></label><input type="number" id="flash_interval" value="0.45" min="0.05" step="0.05" /></div>
       <div class="field"><label>Quiet window (s) <span class="tip" data-tip="After flashing, waits this long for burst goals before restoring.">?</span></label><input type="number" id="flash_quiet_window" value="1.5" min="0" step="0.1" /></div>
-      <div class="field"><label>Transition (ms) <span class="tip" data-tip="Fade time between colors. 0 = instant snap.">?</span></label><input type="number" id="flash_transition_ms" value="120" min="0" step="10" /></div>
+      <div class="field"><label>Transition (ms) <span class="tip" data-tip="Fade time between colors. 0 = instant snap.">?</span></label><input type="number" id="flash_transition_ms" value="0" min="0" step="10" /></div>
     </div>
 
     <div class="sidebar-section">
@@ -528,6 +575,45 @@ const simResult    = $("sim-result");
 const simTeam      = $("sim-team");
 const tooltip      = $("global-tip");
 
+// ── Settings persistence ──────────────────────────────────────────────────────
+const SETTINGS_KEY = "nhl_settings_v1";
+const SETTINGS_FIELDS = [
+  "flash_duration", "flash_interval", "flash_quiet_window", "flash_transition_ms",
+  "poll_live_seconds", "poll_critical_seconds", "poll_pregame_seconds", "poll_error_seconds",
+  "request_timeout", "max_retries", "backoff_base", "backoff_max",
+  "pregame_buffer_seconds", "restore_transition_ms", "goal_delay_seconds",
+];
+
+function saveSettings() {
+  const obj = {};
+  SETTINGS_FIELDS.forEach(id => {
+    const el = $(id);
+    if (el) obj[id] = el.value;
+  });
+  obj["bulb_ips"] = $("bulb-ips").value;
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(obj)); } catch(_) {}
+}
+
+function loadSettings() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null"); } catch(_) { saved = null; }
+  if (!saved) return;
+  SETTINGS_FIELDS.forEach(id => {
+    const el = $(id);
+    if (el && saved[id] !== undefined) el.value = saved[id];
+  });
+  if (saved["bulb_ips"] !== undefined) $("bulb-ips").value = saved["bulb_ips"];
+}
+
+// Attach save-on-change to all settings inputs
+function attachSettingsSave() {
+  SETTINGS_FIELDS.forEach(id => {
+    const el = $(id);
+    if (el) el.addEventListener("change", saveSettings);
+  });
+  $("bulb-ips").addEventListener("input", saveSettings);
+}
+
 // ── Mobile drawer ──
 function openDrawer()  { sidebar.classList.add("open"); overlay.classList.add("open"); }
 function closeDrawer() { sidebar.classList.remove("open"); overlay.classList.remove("open"); }
@@ -598,7 +684,7 @@ function makeSwatch(hsv) {
   const [h,s,v] = hsv;
   const el = document.createElement("div");
   el.className = "swatch";
-  el.style.background = (v===0 && s===0) ? "#111" : hsvToHex(h,s,v);
+  el.style.background = (v === 0 && s === 0) ? "#111" : hsvToHex(h, s, v);
   return el;
 }
 async function loadTeamColors() {
@@ -612,7 +698,32 @@ async function loadTeamColors() {
       opt.textContent = TEAM_NAMES[abbrev] ? `${TEAM_NAMES[abbrev]} (${abbrev})` : abbrev;
       simTeam.appendChild(opt);
     });
+    // Re-render swatches now that colors are loaded
+    refreshSwatches();
   } catch (_) {}
+}
+
+function refreshSwatches() {
+  gameList.querySelectorAll(".team-swatches[data-away][data-home]").forEach(swatchContainer => {
+    const away = swatchContainer.dataset.away;
+    const home = swatchContainer.dataset.home;
+    swatchContainer.innerHTML = "";
+    const ac = _teamColors[away];
+    const hc = _teamColors[home];
+    if (ac) {
+      swatchContainer.appendChild(makeSwatch(ac.primary));
+      swatchContainer.appendChild(makeSwatch(ac.secondary));
+    }
+    if (ac && hc) {
+      const sep = document.createElement("div");
+      sep.className = "swatch-sep";
+      swatchContainer.appendChild(sep);
+    }
+    if (hc) {
+      swatchContainer.appendChild(makeSwatch(hc.primary));
+      swatchContainer.appendChild(makeSwatch(hc.secondary));
+    }
+  });
 }
 
 // ── Games ──
@@ -627,6 +738,118 @@ function getGameDelays() {
     map[inp.dataset.gameId] = parseFloat(inp.value) || 0;
   });
   return map;
+}
+
+// ── Calibration popover ──
+let _openPopover = null;
+function closeAllPopovers() {
+  if (_openPopover) {
+    _openPopover.classList.remove("open");
+    _openPopover = null;
+  }
+}
+document.addEventListener("click", e => {
+  if (_openPopover && !_openPopover.closest(".cal-wrap").contains(e.target)) {
+    closeAllPopovers();
+  }
+});
+
+function buildCalPopover(gameId, delayInput) {
+  const wrap = document.createElement("div");
+  wrap.className = "cal-wrap";
+
+  const btn = document.createElement("button");
+  btn.className = "btn btn-xs";
+  btn.title = "Auto-detect delay from live game clock";
+  btn.textContent = "⏱ Cal";
+
+  const pop = document.createElement("div");
+  pop.className = "cal-popover";
+
+  // Period selector
+  const periodLabel = document.createElement("label");
+  periodLabel.textContent = "Period";
+  const periodSel = document.createElement("select");
+  ["1","2","3","4 (OT)"].forEach((t,i) => {
+    const o = document.createElement("option");
+    o.value = i+1; o.textContent = t;
+    periodSel.appendChild(o);
+  });
+
+  // Clock input
+  const clockLabel = document.createElement("label");
+  clockLabel.textContent = "Game clock on TV (MM:SS)";
+  const clockInput = document.createElement("input");
+  clockInput.type = "text";
+  clockInput.placeholder = "e.g. 14:32";
+  clockInput.maxLength = 5;
+
+  // Result
+  const result = document.createElement("div");
+  result.className = "cal-result";
+
+  // Go button
+  const goBtn = document.createElement("button");
+  goBtn.className = "btn btn-primary";
+  goBtn.style.cssText = "width:100%;justify-content:center;margin-top:2px";
+  goBtn.textContent = "Detect Delay";
+
+  goBtn.addEventListener("click", async e => {
+    e.stopPropagation();
+    const clock = clockInput.value.trim();
+    const period = periodSel.value;
+    if (!clock.match(/^\d{1,2}:\d{2}$/)) {
+      result.className = "cal-result err";
+      result.textContent = "Enter clock as MM:SS (e.g. 14:32)";
+      return;
+    }
+    goBtn.disabled = true;
+    result.className = "cal-result";
+    result.textContent = "Checking…";
+    try {
+      const params = new URLSearchParams({ game_id: gameId, period, clock });
+      const r = await fetch(`/api/calibrate-delay?${params}`);
+      const d = await r.json();
+      if (d.ok) {
+        delayInput.value = d.delay_seconds;
+        saveSettings();
+        result.className = "cal-result ok";
+        result.textContent = `✓ ${d.delay_seconds}s delay (matched ${d.play_type} @ ${d.play_clock})`;
+        // Auto-close after 2s
+        setTimeout(closeAllPopovers, 2000);
+      } else {
+        result.className = "cal-result err";
+        result.textContent = `✗ ${d.error}`;
+      }
+    } catch(err) {
+      result.className = "cal-result err";
+      result.textContent = `✗ ${err.message}`;
+    } finally {
+      goBtn.disabled = false;
+    }
+  });
+
+  pop.append(periodLabel, periodSel, clockLabel, clockInput, goBtn, result);
+
+  btn.addEventListener("click", e => {
+    e.stopPropagation();
+    if (pop.classList.contains("open")) {
+      closeAllPopovers();
+    } else {
+      closeAllPopovers();
+      pop.classList.add("open");
+      _openPopover = pop;
+      clockInput.focus();
+    }
+  });
+
+  // Allow pressing Enter in clock field to trigger detect
+  clockInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") goBtn.click();
+  });
+
+  wrap.append(btn, pop);
+  return wrap;
 }
 
 function renderGames(games) {
@@ -658,17 +881,28 @@ function renderGames(games) {
     badge.className = `game-badge ${badgeClass(g.game_state)}`;
     badge.textContent = g.game_state || "?";
 
+    // Team colour swatches — rendered now if colors loaded, otherwise placeholders
     const swatches = document.createElement("div");
     swatches.className = "team-swatches";
+    swatches.dataset.away = g.away_abbrev;
+    swatches.dataset.home = g.home_abbrev;
     const ac = _teamColors[g.away_abbrev];
     const hc = _teamColors[g.home_abbrev];
-    if (ac) { swatches.appendChild(makeSwatch(ac.primary)); swatches.appendChild(makeSwatch(ac.secondary)); }
-    if (hc) {
-      const sep = document.createElement("div"); sep.style.cssText="width:4px";
+    if (ac) {
+      swatches.appendChild(makeSwatch(ac.primary));
+      swatches.appendChild(makeSwatch(ac.secondary));
+    }
+    if (ac && hc) {
+      const sep = document.createElement("div");
+      sep.className = "swatch-sep";
       swatches.appendChild(sep);
-      swatches.appendChild(makeSwatch(hc.primary)); swatches.appendChild(makeSwatch(hc.secondary));
+    }
+    if (hc) {
+      swatches.appendChild(makeSwatch(hc.primary));
+      swatches.appendChild(makeSwatch(hc.secondary));
     }
 
+    // Delay input
     const delayWrap = document.createElement("div");
     delayWrap.className = "game-delay-wrap";
     const delayLabel = document.createElement("label");
@@ -685,11 +919,16 @@ function renderGames(games) {
     const delayUnit = document.createElement("span");
     delayUnit.textContent = "s";
     delayUnit.style.cssText = "font-size:10px;color:var(--muted)";
-    delayWrap.append(delayLabel, delayInp, delayUnit);
+
+    // Calibrate button + popover
+    const calWrap = buildCalPopover(g.id, delayInp);
+
+    delayWrap.append(delayLabel, delayInp, delayUnit, calWrap);
 
     li.append(cb, matchup, time, badge, swatches, delayWrap);
     li.addEventListener("click", e => {
-      if (e.target === cb || e.target === delayInp || e.target === delayLabel || e.target === matchup) return;
+      if (e.target === cb || e.target === delayInp || e.target === delayLabel
+          || e.target === matchup || e.target.closest(".cal-wrap")) return;
       cb.checked = !cb.checked;
     });
     gameList.appendChild(li);
@@ -711,6 +950,7 @@ async function fetchGames() {
 $("goal_delay_seconds").addEventListener("change", () => {
   const newDefault = parseFloat($("goal_delay_seconds").value) || 0;
   gameList.querySelectorAll(".game-delay-input").forEach(inp => { inp.value = newDefault; });
+  saveSettings();
 });
 
 selectAll.addEventListener("click",   () => gameList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true));
@@ -743,11 +983,6 @@ testBtn.addEventListener("click", async () => {
   } finally {
     testBtn.disabled = false;
   }
-});
-
-$("bulb-ips").addEventListener("input", () => {
-  localStorage.setItem("nhl_bulb_ips", $("bulb-ips").value);
-  setBulbStatus("", "Not tested");
 });
 
 // ── Simulate Goal ──
@@ -859,10 +1094,10 @@ stopBtn.addEventListener("click", async () => {
 
 // ── Init ──
 (async () => {
-  const savedIps = localStorage.getItem("nhl_bulb_ips");
-  if (savedIps) $("bulb-ips").value = savedIps;
+  loadSettings();
+  attachSettingsSave();
   await fetchGames();
-  await loadTeamColors();
+  await loadTeamColors();  // also calls refreshSwatches() after load
   await pollStatus();
   _statusTimer = setInterval(pollStatus, 3000);
 })();
