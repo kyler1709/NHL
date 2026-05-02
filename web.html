@@ -317,6 +317,10 @@ header {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; }
+
 @media (max-width: 680px) {
   :root { --header-h: 50px; }
   #menu-btn { display: flex; }
@@ -916,77 +920,7 @@ function buildCalPopover(gameId, delayInput) {
 
   tapSection.append(tapInstructions, tapBtn, tapResult);
 
-  // Divider
-  const divider = document.createElement('div');
-  divider.style.cssText = 'border-top:1px solid var(--border);margin:2px 0;';
-
-  // Mode 2: Clock input (fallback, collapsed)
-  const clockToggle = document.createElement('button');
-  clockToggle.className = 'btn btn-xs';
-  clockToggle.style.cssText = 'width:100%;justify-content:center;color:var(--muted);';
-  clockToggle.textContent = 'Use clock instead ▾';
-
-  const clockSection = document.createElement('div');
-  clockSection.style.cssText = 'display:none;flex-direction:column;gap:6px;';
-
-  clockToggle.addEventListener('click', e => {
-    e.stopPropagation();
-    const open = clockSection.style.display === 'flex';
-    clockSection.style.display = open ? 'none' : 'flex';
-    clockToggle.textContent = open ? 'Use clock instead ▾' : 'Use clock instead ▴';
-  });
-
-  // Go button (for clock method)
-  const goBtn = document.createElement("button");
-  goBtn.className = "btn btn-primary";
-  goBtn.style.cssText = "width:100%;justify-content:center;margin-top:2px";
-  goBtn.textContent = "Detect Delay";
-
-  goBtn.addEventListener("click", async e => {
-    e.stopPropagation();
-    const clock = clockInput.value.trim();
-    const period = periodSel.value;
-    if (!clock.match(/^\d{1,2}:\d{2}$/)) {
-      result.className = "cal-result err";
-      result.textContent = "Enter clock as MM:SS (e.g. 14:32)";
-      return;
-    }
-    goBtn.disabled = true;
-    result.className = "cal-result";
-    result.textContent = "Computing…";
-    try {
-      const params = new URLSearchParams({ game_id: gameId, period, clock });
-      const r = await fetch(`/api/calibrate-delay?${params}`);
-      const d = await r.json();
-      if (d.ok) {
-        delayInput.value = d.delay_seconds;
-        delayInput.classList.remove("pending");
-        saveSettings();
-        result.className = "cal-result ok";
-        result.textContent = `${d.delay_seconds}s delay ✓`;
-        const applyBtn = delayInput.closest('.game-delay-wrap')
-          ?.parentElement
-          ?.querySelector('.delay-apply-btn');
-        if (applyBtn) applyBtn.click();
-        setTimeout(closeAllPopovers, 2500);
-      } else {
-        result.className = "cal-result err";
-        result.textContent = d.error;
-      }
-    } catch(err) {
-      result.className = "cal-result err";
-      result.textContent = err.message;
-    } finally {
-      goBtn.disabled = false;
-    }
-  });
-
-  clockInput.addEventListener("keydown", e => { if (e.key === "Enter") goBtn.click(); });
-
-  // Assemble clock section
-  clockSection.append(periodLabel, periodSel, clockLabel, clockInput, goBtn, result);
-
-  pop.append(autoStatus, tapSection, divider, clockToggle, clockSection);
+  pop.append(autoStatus, tapSection);
   prefetchGoal();
 
   // Auto-detect game state when popover opens
@@ -1124,13 +1058,23 @@ function renderGames(games) {
       delayApply.textContent = "Apply";
     });
 
-    delayApply.addEventListener("click", () => {
+    delayApply.addEventListener("click", async () => {
       delayInput.classList.remove("pending");
       delayApply.classList.add("applied");
       delayApply.textContent = "✓";
       saveSettings();
+      // If monitoring is active, restart with the new delay applied
+      try {
+        const st = await fetch("/api/status").then(r => r.json());
+        if (st.state === "monitoring") {
+          await fetch("/api/stop", { method: "POST" });
+          if (_es) { _es.close(); _es = null; }
+          await new Promise(r => setTimeout(r, 400));
+          await startMonitoring();
+        }
+      } catch(_) {}
       setTimeout(() => {
-        delayApply.classList.remove("applied");
+        delayApply.classList.remove("applied", "visible");
         delayApply.textContent = "Apply";
       }, 1500);
     });
@@ -1142,11 +1086,11 @@ function renderGames(games) {
     li.append(cb, matchup, time, badge, clockEl, swatches, delayWrap, calWrap);
     gameList.appendChild(li);
 
-    // Track live games for clock updates
+    // Auto-select all games; track live ones for clock updates
+    cb.checked = true;
     const isLive = g.game_state === "LIVE" || g.game_state === "CRIT";
     if (isLive) {
       _liveGameIds.add(String(g.id));
-      cb.checked = true;  // auto-select live games
     }
   });
 
@@ -1192,19 +1136,18 @@ testBtn.addEventListener("click", async () => {
 });
 
 // ── Start / Stop ──
-startBtn.addEventListener("click", async () => {
+async function startMonitoring() {
   const ips = getBulbIps();
-  if (!ips.length) { alert("Enter at least one bulb IP in the sidebar."); return; }
+  if (!ips.length) { alert("Enter at least one bulb IP in the sidebar."); return false; }
 
   const selectedGames = [...gameList.querySelectorAll('input[type="checkbox"]:checked')]
     .map(cb => cb.dataset.gameId);
-  if (!selectedGames.length) { alert("Select at least one game."); return; }
+  if (!selectedGames.length) { alert("Select at least one game."); return false; }
 
   const delays = getGameDelays();
   const defaultDelay = parseFloat($("goal_delay_seconds").value) || 35;
   const perGameDelays = selectedGames.map(id => delays[id] ?? defaultDelay);
 
-  // Save current settings before starting
   saveSettings();
 
   const body = {
@@ -1236,14 +1179,18 @@ startBtn.addEventListener("click", async () => {
       body: JSON.stringify(body),
     });
     const d = await r.json();
-    if (d.error) { alert(d.error); startBtn.disabled = false; return; }
+    if (d.error) { alert(d.error); startBtn.disabled = false; return false; }
     stopBtn.disabled = false;
     connectLog();
+    return true;
   } catch(e) {
     alert(e.message);
     startBtn.disabled = false;
+    return false;
   }
-});
+}
+
+startBtn.addEventListener("click", startMonitoring);
 
 stopBtn.addEventListener("click", async () => {
   stopBtn.disabled = true;
@@ -1332,8 +1279,18 @@ async function init() {
   attachSettingsSave();
   await loadTeamColors();
   await loadGames();
-  await loadLogHistory();  // Load persistent log before connecting SSE
+  await loadLogHistory();
   pollStatus();
+  // Auto-start monitoring if a bulb IP is configured and not already monitoring
+  const ips = getBulbIps();
+  if (ips.length) {
+    try {
+      const st = await fetch("/api/status").then(r => r.json());
+      if (st.state !== "monitoring") {
+        await startMonitoring();
+      }
+    } catch(_) {}
+  }
 }
 
 init();
