@@ -824,29 +824,7 @@ function buildCalPopover(gameId, delayInput) {
   autoStatus.className = "cal-autodetect";
   autoStatus.textContent = "⏳ Fetching game state…";
 
-  // Period selector (auto-filled)
-  const periodLabel = document.createElement("label");
-  periodLabel.textContent = "Period (auto-detected)";
-  const periodSel = document.createElement("select");
-  ["1","2","3","4 (OT)"].forEach((t,i) => {
-    const o = document.createElement("option");
-    o.value = i+1; o.textContent = t;
-    periodSel.appendChild(o);
-  });
-
-  // Clock input
-  const clockLabel = document.createElement("label");
-  clockLabel.textContent = "Game clock on your TV (MM:SS)";
-  const clockInput = document.createElement("input");
-  clockInput.type = "text";
-  clockInput.placeholder = "e.g. 14:32";
-  clockInput.maxLength = 5;
-
-  // Result
-  const result = document.createElement("div");
-  result.className = "cal-result";
-
-  // Mode 1: Goal tap (primary)
+  // Goal tap section
   const tapSection = document.createElement('div');
   tapSection.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
 
@@ -939,21 +917,11 @@ function buildCalPopover(gameId, delayInput) {
         return;
       }
 
-      // Pre-fill period
-      const p = Math.min(parseInt(d.period) || 1, 4);
-      periodSel.value = p;
-
       const pLabel = d.period_type === "OT" ? "OT" : `P${d.period}`;
       const clockStr = d.clock || "--:--";
       const intermMsg = d.in_intermission ? " (intermission)" : "";
-
       autoStatus.className = "cal-autodetect live";
       autoStatus.textContent = `✓ ${pLabel} · ${clockStr}${intermMsg} — NHL API`;
-
-      // Pre-fill clock as a starting reference (user should type what TV shows)
-      if (!clockInput.value && d.clock && !d.in_intermission) {
-        clockInput.placeholder = `TV shows? (API: ${d.clock})`;
-      }
     } catch(err) {
       autoStatus.className = "cal-autodetect err";
       autoStatus.textContent = `✗ ${err.message}`;
@@ -966,24 +934,19 @@ function buildCalPopover(gameId, delayInput) {
       closeAllPopovers();
     } else {
       closeAllPopovers();
-      // Position using fixed coords anchored to the button
       const r = btn.getBoundingClientRect();
       const popWidth = 230;
       let left = r.right - popWidth;
       if (left < 8) left = 8;
       let top = r.bottom + 6;
-      // If it would overflow the bottom, flip above
       if (top + 300 > window.innerHeight) top = r.top - 6 - Math.min(300, window.innerHeight * 0.8);
       if (top < 8) top = 8;
       pop.style.top = top + 'px';
       pop.style.left = left + 'px';
       pop.classList.add("open");
       _openPopover = pop;
-      // Start live clock ticker
-      _clockPollTimer = setInterval(pollApiClock, 2000);
-      pollApiClock(); // immediate first call
       autoDetectGameState();
-      clockInput.focus();
+      prefetchGoal();
     }
   });
 
